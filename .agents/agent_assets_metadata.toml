@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "S8a7ApylVFJoJ_46GRn33"
+uri = "file://artifacts/agro-calc/assets/images/icon.png"
+type = "image"
+title = "agro-calc-icon"

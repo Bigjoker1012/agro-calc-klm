@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "AgroCalc КЛМ"
+version = "1.0.0"
+id = "artifacts/agro-calc"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 21510
+
+[services.development]
+run = "pnpm --filter @workspace/agro-calc run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/agro-calc", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/agro-calc", "run", "serve" ]
+
+[services.env]
+PORT = "21510"
+BASE_PATH = "/"
