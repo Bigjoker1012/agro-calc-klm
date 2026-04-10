@@ -41,9 +41,10 @@ function ClassicTabLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
         headerShown: true,
-        headerStyle: { backgroundColor: colors.primary },
-        headerTintColor: colors.primaryForeground,
-        headerTitleStyle: { fontFamily: "Inter_600SemiBold", fontSize: 17 },
+        headerStyle: { backgroundColor: colors.card },
+        headerTintColor: colors.foreground,
+        headerTitleStyle: { fontFamily: "Inter_700Bold", fontSize: 17, color: colors.foreground },
+        headerShadowVisible: false,
         tabBarStyle: {
           position: "absolute",
           backgroundColor: isIOS ? "transparent" : colors.card,
@@ -77,7 +78,7 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Расчёт",
+          title: "AgroCalc КЛМ",
           tabBarIcon: ({ color }) =>
             isIOS ? (
               <SymbolView name="function" tintColor={color} size={22} />
