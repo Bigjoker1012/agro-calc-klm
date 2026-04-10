@@ -664,7 +664,7 @@ function makeStyles(
       borderRadius: 8,
       paddingHorizontal: 10,
       height: 38,
-      minWidth: 80,
+      width: 100,
       backgroundColor: colors.background,
     },
     inputPrefix: {
@@ -677,8 +677,8 @@ function makeStyles(
       fontSize: 16,
       color: colors.foreground,
       fontFamily: "Inter_600SemiBold",
-      minWidth: 50,
-      textAlign: "right",
+      flex: 1,
+      textAlign: "left",
     },
     moistureBig: {
       fontSize: 22,
