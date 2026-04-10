@@ -1,17 +1,18 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Modal,
-  FlatList,
   StyleSheet,
   Alert,
+  Share,
+  Linking,
+  PanResponder,
   Platform,
 } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -21,12 +22,19 @@ import {
   calculate,
   findRule,
   formatCurrency,
+  buildShareText,
   type CalculationResult,
 } from "@/utils/calculator";
 import { saveCalculation } from "@/utils/storage";
 
-const MOISTURE_MIN = 20;
-const MOISTURE_MAX = 80;
+const MOISTURE_MIN = 0;
+const MOISTURE_MAX = 100;
+
+const METHOD_OPTIONS = [
+  { id: "combine" as const, label: "Через комбайн", icon: "construct-outline" as const },
+  { id: "sprayer" as const, label: "Опрыскиватель", icon: "water-outline" as const },
+  { id: "manual" as const, label: "Ручное", icon: "hand-right-outline" as const },
+];
 
 export default function CalculatorScreen() {
   const colors = useColors();
@@ -36,26 +44,22 @@ export default function CalculatorScreen() {
   const [culture, setCulture] = useState("");
   const [mass, setMass] = useState("");
   const [moisture, setMoisture] = useState(40);
-  const [method, setMethod] = useState<"combine" | "sprayer">("combine");
+  const [method, setMethod] = useState<"combine" | "sprayer" | "manual">("combine");
   const [speed, setSpeed] = useState("");
   const [egalisScheme, setEgalisScheme] = useState<2 | 8>(2);
   const [result, setResult] = useState<CalculationResult | null>(null);
-  const [showCultureModal, setShowCultureModal] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const isEgalisCulture =
-    culture === "Силос / Сенаж" || culture === "Влажное зерно";
+  const isEgalisCulture = culture === "Силос / Сенаж" || culture === "Влажное зерно";
   const moistureHint = culture ? CULTURE_MOISTURE_HINTS[culture] : null;
   const ruleExists = culture ? findRule(culture, moisture) !== null : null;
 
-  const handleMoisture = useCallback(
-    (delta: number) => {
-      setMoisture((v) => Math.min(MOISTURE_MAX, Math.max(MOISTURE_MIN, v + delta)));
-      setResult(null);
-      setSaved(false);
-    },
-    []
-  );
+  const handleCulture = (c: string) => {
+    setCulture(c);
+    setResult(null);
+    setSaved(false);
+    Haptics.selectionAsync();
+  };
 
   const handleCalculate = () => {
     if (!culture) {
@@ -69,7 +73,7 @@ export default function CalculatorScreen() {
     }
     const speedNum = parseFloat(speed.replace(",", "."));
     if (!speed || isNaN(speedNum) || speedNum <= 0) {
-      Alert.alert("Внимание", "Введите корректную скорость уборки (т/ч)");
+      Alert.alert("Внимание", "Введите производительность (т/ч)");
       return;
     }
 
@@ -85,7 +89,7 @@ export default function CalculatorScreen() {
     if (!calc) {
       Alert.alert(
         "Нет данных",
-        `Для культуры "${culture}" при влажности ${moisture}% правило не найдено.\n\nПроверьте диапазон влажности:\n${CULTURE_MOISTURE_HINTS[culture]}`
+        `Для культуры "${culture}" при влажности ${moisture}% правило не найдено.\n\n${CULTURE_MOISTURE_HINTS[culture]}`
       );
       return;
     }
@@ -106,417 +110,475 @@ export default function CalculatorScreen() {
     }
   };
 
-  const handleReset = () => {
-    setCulture("");
-    setMass("");
-    setMoisture(40);
-    setMethod("combine");
-    setSpeed("");
-    setEgalisScheme(2);
-    setResult(null);
-    setSaved(false);
+  const handleShareWhatsApp = async () => {
+    if (!result) return;
+    const text = buildShareText(result);
+    const url = `whatsapp://send?text=${encodeURIComponent(text)}`;
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        Linking.openURL(url);
+      } else {
+        Share.share({ message: text });
+      }
+    } catch {
+      Share.share({ message: text });
+    }
+  };
+
+  const handleSharePDF = async () => {
+    if (!result) return;
+    const text = buildShareText(result);
+    Share.share({ message: text, title: "AgroCalc КЛМ — Расчёт" });
   };
 
   const styles = makeStyles(colors, isWeb, insets);
-  const moisturePct = ((moisture - MOISTURE_MIN) / (MOISTURE_MAX - MOISTURE_MIN)) * 100;
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.scrollContent}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
+      {/* Culture Selection */}
+      <Text style={styles.groupLabel}>Сырьё</Text>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ marginBottom: 16 }}
+        contentContainerStyle={{ gap: 8, paddingRight: 4 }}
       >
-        {/* Culture Picker */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Параметры сырья</Text>
-
-          <Text style={styles.label}>Культура / сырьё</Text>
-          <TouchableOpacity
-            style={styles.pickerButton}
-            onPress={() => setShowCultureModal(true)}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={
-                culture ? styles.pickerText : styles.pickerPlaceholder
-              }
+        {CULTURES.map((c) => {
+          const selected = c === culture;
+          return (
+            <TouchableOpacity
+              key={c}
+              style={[styles.chip, selected && styles.chipSelected]}
+              onPress={() => handleCulture(c)}
+              activeOpacity={0.75}
             >
-              {culture || "Выберите культуру..."}
-            </Text>
-            <Feather name="chevron-down" size={18} color={colors.mutedForeground} />
-          </TouchableOpacity>
+              {selected && (
+                <Feather name="check" size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
+              )}
+              <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                {c}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
 
-          <View style={styles.divider} />
+      {/* Parameters Card */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Параметры заготовки</Text>
 
-          <Text style={styles.label}>Масса сырья (тонн)</Text>
-          <TextInput
-            style={styles.input}
-            value={mass}
-            onChangeText={(v) => { setMass(v); setResult(null); setSaved(false); }}
-            placeholder="Например: 100"
-            placeholderTextColor={colors.mutedForeground}
-            keyboardType="decimal-pad"
-          />
-
-          <View style={styles.divider} />
-
-          <View style={styles.moistureHeader}>
-            <Text style={styles.label}>Влажность</Text>
-            <Text style={styles.moistureValue}>{moisture}%</Text>
-          </View>
-
-          <View style={styles.moistureBar}>
-            <View
-              style={[
-                styles.moistureFill,
-                {
-                  width: `${moisturePct}%` as any,
-                  backgroundColor: ruleExists === false
-                    ? colors.warning
-                    : ruleExists === true
-                    ? colors.accent
-                    : colors.border,
-                },
-              ]}
+        {/* Mass */}
+        <View style={styles.paramRow}>
+          <Text style={styles.paramLabel}>Масса, т</Text>
+          <View style={styles.inputBox}>
+            <Text style={styles.inputPrefix}>=</Text>
+            <TextInput
+              style={styles.paramInput}
+              value={mass}
+              onChangeText={(v) => { setMass(v); setResult(null); setSaved(false); }}
+              placeholder="0"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="decimal-pad"
             />
           </View>
-
-          <View style={styles.moistureControls}>
-            <View style={styles.moistureButtons}>
-              <TouchableOpacity
-                style={styles.moistureBtn}
-                onPress={() => handleMoisture(-5)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.moistureBtnText}>-5</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.moistureBtn}
-                onPress={() => handleMoisture(-1)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.moistureBtnText}>-1</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.moistureBtn}
-                onPress={() => handleMoisture(1)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.moistureBtnText}>+1</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.moistureBtn}
-                onPress={() => handleMoisture(5)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.moistureBtnText}>+5</Text>
-              </TouchableOpacity>
-            </View>
-            {moistureHint && (
-              <Text
-                style={[
-                  styles.moistureHint,
-                  ruleExists === false && { color: colors.warning },
-                ]}
-              >
-                {moistureHint}
-              </Text>
-            )}
-          </View>
         </View>
 
-        {/* Method & Speed */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Параметры внесения</Text>
+        <View style={styles.divider} />
 
-          <Text style={styles.label}>Способ внесения</Text>
-          <View style={styles.toggleRow}>
-            <TouchableOpacity
-              style={[
-                styles.toggleBtn,
-                method === "combine" && styles.toggleBtnActive,
-              ]}
-              onPress={() => { setMethod("combine"); setResult(null); setSaved(false); }}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.toggleBtnText,
-                  method === "combine" && styles.toggleBtnTextActive,
-                ]}
-              >
-                Комбайн
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.toggleBtn,
-                method === "sprayer" && styles.toggleBtnActive,
-              ]}
-              onPress={() => { setMethod("sprayer"); setResult(null); setSaved(false); }}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.toggleBtnText,
-                  method === "sprayer" && styles.toggleBtnTextActive,
-                ]}
-              >
-                Опрыскиватель
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.divider} />
-
-          <Text style={styles.label}>Скорость уборки (т/ч)</Text>
-          <TextInput
-            style={styles.input}
-            value={speed}
-            onChangeText={(v) => { setSpeed(v); setResult(null); setSaved(false); }}
-            placeholder="Например: 25"
-            placeholderTextColor={colors.mutedForeground}
-            keyboardType="decimal-pad"
-          />
-
-          {isEgalisCulture && (
-            <>
-              <View style={styles.divider} />
-              <Text style={styles.label}>Схема разведения EGALIS</Text>
-              <View style={styles.toggleRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.toggleBtn,
-                    egalisScheme === 2 && styles.toggleBtnActive,
-                  ]}
-                  onPress={() => { setEgalisScheme(2); setResult(null); setSaved(false); }}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.toggleBtnText,
-                      egalisScheme === 2 && styles.toggleBtnTextActive,
-                    ]}
-                  >
-                    50 г / 50 л (2 л/т)
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.toggleBtn,
-                    egalisScheme === 8 && styles.toggleBtnActive,
-                  ]}
-                  onPress={() => { setEgalisScheme(8); setResult(null); setSaved(false); }}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.toggleBtnText,
-                      egalisScheme === 8 && styles.toggleBtnTextActive,
-                    ]}
-                  >
-                    50 г / 200 л (8 л/т)
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          )}
+        {/* Moisture */}
+        <View style={styles.paramRow}>
+          <Text style={styles.paramLabel}>Влажность, %</Text>
+          <Text style={styles.moistureBig}>{moisture}</Text>
         </View>
+        <MoistureSlider
+          value={moisture}
+          min={MOISTURE_MIN}
+          max={MOISTURE_MAX}
+          activeColor={ruleExists === false ? colors.warning : colors.primary}
+          onChange={(v) => {
+            setMoisture(v);
+            setResult(null);
+            setSaved(false);
+          }}
+        />
+        {moistureHint && (
+          <Text
+            style={[
+              styles.hintText,
+              ruleExists === false && { color: colors.warning },
+            ]}
+          >
+            {moistureHint}
+          </Text>
+        )}
 
-        {/* Calculate Button */}
-        <TouchableOpacity
-          style={styles.calcButton}
-          onPress={handleCalculate}
-          activeOpacity={0.85}
-        >
-          <Feather name="zap" size={20} color="#FFFFFF" />
-          <Text style={styles.calcButtonText}>Рассчитать</Text>
-        </TouchableOpacity>
+        <View style={styles.divider} />
 
-        {/* Result */}
-        {result && (
-          <View style={styles.resultCard}>
-            <Text style={styles.resultProductLabel}>
-              {result.product.name}
-            </Text>
-            <Text style={styles.resultDoseLabel}>
-              Доза: {result.doseDisplay} {result.rule.unit}
-            </Text>
+        {/* Speed */}
+        <View style={styles.paramRow}>
+          <Text style={styles.paramLabel}>Производительность, т/ч</Text>
+          <View style={styles.inputBox}>
+            <Text style={styles.inputPrefix}>=</Text>
+            <TextInput
+              style={styles.paramInput}
+              value={speed}
+              onChangeText={(v) => { setSpeed(v); setResult(null); setSaved(false); }}
+              placeholder="0"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="decimal-pad"
+            />
+          </View>
+        </View>
+      </View>
 
-            <View style={styles.pumpBox}>
-              <Text style={styles.pumpLabel}>НАСТРОЙКА ПОМПЫ</Text>
-              <Text style={styles.pumpValue}>
-                {result.pumpSetting}
-              </Text>
-              <Text style={styles.pumpUnit}>{result.pumpUnit}</Text>
-            </View>
-
-            <View style={styles.resultGrid}>
-              {result.totalLiters !== undefined && (
-                <ResultRow
-                  label="Объём препарата"
-                  value={`${result.totalLiters} л`}
-                  colors={colors}
+      {/* Method Card */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Способ внесения</Text>
+        <View style={styles.methodRow}>
+          {METHOD_OPTIONS.map((opt) => {
+            const sel = method === opt.id;
+            return (
+              <TouchableOpacity
+                key={opt.id}
+                style={[styles.methodCard, sel && styles.methodCardSelected]}
+                onPress={() => { setMethod(opt.id); setResult(null); setSaved(false); }}
+                activeOpacity={0.75}
+              >
+                <Ionicons
+                  name={opt.icon}
+                  size={24}
+                  color={sel ? colors.primary : colors.mutedForeground}
                 />
-              )}
-              <ResultRow
-                label="Масса препарата"
-                value={`${result.totalKg} кг`}
-                colors={colors}
-              />
-              {result.totalPacks !== undefined && (
-                <ResultRow
-                  label="Количество пакетов (50 г)"
-                  value={`${result.totalPacks} шт.`}
-                  colors={colors}
-                />
-              )}
-              {result.solutionLiters !== undefined && (
-                <ResultRow
-                  label="Объём раствора"
-                  value={`${result.solutionLiters} л`}
-                  colors={colors}
-                />
-              )}
-              <ResultRow
-                label="Стоимость"
-                value={`${formatCurrency(result.totalCost)} BYN`}
-                colors={colors}
-                highlight
-              />
-            </View>
-
-            {result.solutionSchemeDisplay && (
-              <View style={styles.schemeBox}>
-                <Text style={styles.schemeText}>
-                  {result.solutionSchemeDisplay}
+                <Text style={[styles.methodLabel, sel && styles.methodLabelSelected]}>
+                  {opt.label}
                 </Text>
-              </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {isEgalisCulture && (
+          <>
+            <View style={styles.divider} />
+            <Text style={[styles.paramLabel, { marginBottom: 8 }]}>
+              Схема разведения EGALIS
+            </Text>
+            <View style={styles.methodRow}>
+              {([2, 8] as const).map((scheme) => (
+                <TouchableOpacity
+                  key={scheme}
+                  style={[
+                    styles.methodCard,
+                    egalisScheme === scheme && styles.methodCardSelected,
+                    { flex: 1 },
+                  ]}
+                  onPress={() => { setEgalisScheme(scheme); setResult(null); setSaved(false); }}
+                  activeOpacity={0.75}
+                >
+                  <Feather
+                    name="droplet"
+                    size={20}
+                    color={egalisScheme === scheme ? colors.primary : colors.mutedForeground}
+                  />
+                  <Text
+                    style={[
+                      styles.methodLabel,
+                      egalisScheme === scheme && styles.methodLabelSelected,
+                    ]}
+                  >
+                    {scheme === 2 ? "50 г / 50 л" : "50 г / 200 л"}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      color: colors.mutedForeground,
+                      fontFamily: "Inter_400Regular",
+                      marginTop: 1,
+                    }}
+                  >
+                    ({scheme} л/т)
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+      </View>
+
+      {/* Calculate Button */}
+      <TouchableOpacity
+        style={styles.calcButton}
+        onPress={handleCalculate}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.calcButtonText}>Сформировать расчет</Text>
+      </TouchableOpacity>
+
+      {/* Result */}
+      {result && (
+        <>
+          <View style={styles.resultCard}>
+            <Text style={styles.resultTitle}>Рекомендация</Text>
+
+            <ResultRow
+              label="Продукт:"
+              value={result.product.name}
+              colors={colors}
+              valueStyle={{ fontFamily: "Inter_700Bold" }}
+            />
+            <ResultRow
+              label="Причина:"
+              value={result.reason}
+              colors={colors}
+              valueStyle={{ fontFamily: "Inter_700Bold" }}
+            />
+            <View style={styles.divider} />
+            <ResultRow
+              label="Норма:"
+              value={`${result.doseDisplay} ${result.rule.unit}`}
+              colors={colors}
+            />
+            {result.totalLiters !== undefined && (
+              <ResultRow
+                label="Итого препарата:"
+                value={`${result.totalLiters} л`}
+                colors={colors}
+              />
             )}
+            {result.totalPacks !== undefined && (
+              <ResultRow
+                label="Пакетов (50 г):"
+                value={`${result.totalPacks} шт.`}
+                colors={colors}
+              />
+            )}
+            {result.solutionLiters !== undefined && (
+              <ResultRow
+                label="Объём раствора:"
+                value={`${result.solutionLiters} л`}
+                colors={colors}
+              />
+            )}
+            <ResultRow
+              label="Настройка дозатора:"
+              value={`${result.pumpLPH} ${result.pumpUnit}`}
+              colors={colors}
+              highlight
+            />
+            <View style={styles.divider} />
+            <ResultRow
+              label="Цена партии:"
+              value={`${formatCurrency(result.totalCost)} BYN`}
+              colors={colors}
+              highlight
+            />
 
             {result.product.id === "silkorm" && (
               <View style={styles.warningBox}>
-                <Feather name="alert-triangle" size={14} color={colors.warning} />
+                <Feather name="alert-triangle" size={13} color={colors.warning} />
                 <Text style={styles.warningText}>
                   Используйте средства защиты: перчатки, очки
                 </Text>
               </View>
             )}
 
-            <View style={styles.resultActions}>
-              <TouchableOpacity
-                style={[styles.saveBtn, saved && styles.saveBtnDone]}
-                onPress={handleSave}
-                disabled={saved}
-                activeOpacity={0.8}
+            {result.solutionSchemeDisplay && (
+              <View style={styles.schemeBox}>
+                <Text style={styles.schemeText}>{result.solutionSchemeDisplay}</Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.saveRow, saved && { borderColor: colors.accent }]}
+              onPress={handleSave}
+              disabled={saved}
+              activeOpacity={0.8}
+            >
+              <Feather
+                name={saved ? "check-circle" : "bookmark"}
+                size={15}
+                color={saved ? colors.accent : colors.mutedForeground}
+              />
+              <Text
+                style={[
+                  styles.saveRowText,
+                  saved && { color: colors.accent },
+                ]}
               >
-                <Feather
-                  name={saved ? "check" : "save"}
-                  size={16}
-                  color={saved ? colors.accent : colors.primary}
-                />
-                <Text
-                  style={[
-                    styles.saveBtnText,
-                    saved && { color: colors.accent },
-                  ]}
-                >
-                  {saved ? "Сохранено" : "Сохранить в историю"}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.resetBtn}
-                onPress={handleReset}
-                activeOpacity={0.8}
-              >
-                <Feather name="refresh-ccw" size={16} color={colors.mutedForeground} />
-              </TouchableOpacity>
-            </View>
+                {saved ? "Сохранено в историю" : "Сохранить в историю"}
+              </Text>
+            </TouchableOpacity>
           </View>
-        )}
 
-        <View style={{ height: 24 }} />
-      </ScrollView>
+          {/* Share Buttons */}
+          <View style={styles.shareRow}>
+            <TouchableOpacity
+              style={styles.shareBtn}
+              onPress={handleSharePDF}
+              activeOpacity={0.8}
+            >
+              <Feather name="file-text" size={18} color={colors.foreground} />
+              <Text style={styles.shareBtnText}>Скачать PDF</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.shareBtn, { borderColor: "#25D366" }]}
+              onPress={handleShareWhatsApp}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+              <Text style={[styles.shareBtnText, { color: "#25D366" }]}>
+                WhatsApp
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
 
-      {/* Culture Picker Modal */}
-      <Modal
-        visible={showCultureModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowCultureModal(false)}
+      <View style={{ height: 24 }} />
+    </ScrollView>
+  );
+}
+
+/* ─── Custom Moisture Slider ─── */
+interface SliderProps {
+  value: number;
+  min: number;
+  max: number;
+  activeColor: string;
+  onChange: (v: number) => void;
+}
+
+function MoistureSlider({ value, min, max, activeColor, onChange }: SliderProps) {
+  const trackWidthRef = useRef(0);
+  const [trackWidth, setTrackWidth] = useState(0);
+  const THUMB = 20;
+
+  const updateValue = useCallback(
+    (x: number) => {
+      const w = trackWidthRef.current;
+      if (w === 0) return;
+      const ratio = Math.max(0, Math.min(1, x / w));
+      const v = Math.round(min + ratio * (max - min));
+      onChange(v);
+    },
+    [min, max, onChange]
+  );
+
+  const panRef = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => updateValue(evt.nativeEvent.locationX),
+      onPanResponderMove: (evt) => updateValue(evt.nativeEvent.locationX),
+    })
+  ).current;
+
+  const fillPct = ((value - min) / (max - min)) * 100;
+  const thumbLeft = trackWidth > 0 ? (fillPct / 100) * trackWidth - THUMB / 2 : 0;
+
+  return (
+    <View style={{ marginBottom: 4, marginTop: 2 }}>
+      <View
+        style={{ height: 28, justifyContent: "center" }}
+        onLayout={(e) => {
+          const w = e.nativeEvent.layout.width;
+          trackWidthRef.current = w;
+          setTrackWidth(w);
+        }}
+        {...panRef.panHandlers}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowCultureModal(false)}
+        {/* Track */}
+        <View
+          style={{
+            height: 4,
+            backgroundColor: "#D0E4D0",
+            borderRadius: 2,
+            overflow: "visible",
+          }}
         >
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Культура / сырьё</Text>
-            <FlatList
-              data={CULTURES}
-              keyExtractor={(item) => item}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.modalItem,
-                    item === culture && styles.modalItemActive,
-                  ]}
-                  onPress={() => {
-                    setCulture(item);
-                    setResult(null);
-                    setSaved(false);
-                    setShowCultureModal(false);
-                    Haptics.selectionAsync();
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.modalItemText,
-                      item === culture && styles.modalItemTextActive,
-                    ]}
-                  >
-                    {item}
-                  </Text>
-                  {item === culture && (
-                    <Feather name="check" size={18} color={colors.primary} />
-                  )}
-                </TouchableOpacity>
-              )}
-              ItemSeparatorComponent={() => <View style={styles.divider} />}
-            />
-            <View style={{ height: Math.max(insets.bottom, 16) }} />
-          </View>
-        </TouchableOpacity>
-      </Modal>
+          {/* Fill */}
+          <View
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: `${fillPct}%`,
+              backgroundColor: activeColor,
+              borderRadius: 2,
+            }}
+          />
+        </View>
+        {/* Thumb */}
+        {trackWidth > 0 && (
+          <View
+            style={{
+              position: "absolute",
+              left: thumbLeft,
+              width: THUMB,
+              height: THUMB,
+              borderRadius: THUMB / 2,
+              backgroundColor: activeColor,
+              borderWidth: 3,
+              borderColor: "#FFFFFF",
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.2,
+              shadowRadius: 2,
+              elevation: 3,
+              top: "50%",
+              marginTop: -THUMB / 2,
+            }}
+          />
+        )}
+      </View>
+      {/* Scale */}
+      <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 2 }}>
+        {[0, 25, 50, 75, 100].map((tick) => (
+          <Text key={tick} style={{ fontSize: 10, color: "#A0A0A0", fontFamily: "Inter_400Regular" }}>
+            {tick}
+          </Text>
+        ))}
+      </View>
     </View>
   );
 }
 
+/* ─── Result Row ─── */
 function ResultRow({
   label,
   value,
   colors,
   highlight,
+  valueStyle,
 }: {
   label: string;
   value: string;
   colors: ReturnType<typeof useColors>;
   highlight?: boolean;
+  valueStyle?: object;
 }) {
   return (
-    <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 6 }}>
-      <Text style={{ fontSize: 14, color: colors.mutedForeground, flex: 1 }}>
+    <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 5 }}>
+      <Text style={{ fontSize: 14, color: "#666", fontFamily: "Inter_400Regular", flex: 1 }}>
         {label}
       </Text>
       <Text
-        style={{
-          fontSize: 14,
-          fontFamily: "Inter_600SemiBold",
-          color: highlight ? colors.primary : colors.foreground,
-        }}
+        style={[
+          {
+            fontSize: 14,
+            fontFamily: "Inter_600SemiBold",
+            color: highlight ? "#1A2E1A" : "#1A2E1A",
+          },
+          highlight && { fontSize: 16, fontFamily: "Inter_700Bold" },
+          valueStyle,
+        ]}
       >
         {value}
       </Text>
@@ -524,6 +586,7 @@ function ResultRow({
   );
 }
 
+/* ─── Styles ─── */
 function makeStyles(
   colors: ReturnType<typeof useColors>,
   isWeb: boolean,
@@ -539,6 +602,34 @@ function makeStyles(
       paddingTop: isWeb ? Math.max(insets.top, 67) + 8 : 8,
       paddingBottom: isWeb ? 34 + 84 : 100,
     },
+    groupLabel: {
+      fontSize: 20,
+      fontFamily: "Inter_700Bold",
+      color: colors.foreground,
+      marginBottom: 10,
+    },
+    chip: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 20,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    chipSelected: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    chipText: {
+      fontSize: 13,
+      fontFamily: "Inter_500Medium",
+      color: colors.mutedForeground,
+    },
+    chipTextSelected: {
+      color: "#FFFFFF",
+    },
     card: {
       backgroundColor: colors.card,
       borderRadius: 16,
@@ -547,141 +638,100 @@ function makeStyles(
       borderWidth: 1,
       borderColor: colors.border,
     },
-    sectionTitle: {
-      fontSize: 13,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.mutedForeground,
-      textTransform: "uppercase",
-      letterSpacing: 0.8,
+    cardTitle: {
+      fontSize: 17,
+      fontFamily: "Inter_700Bold",
+      color: colors.foreground,
       marginBottom: 14,
     },
-    label: {
-      fontSize: 14,
-      fontFamily: "Inter_500Medium",
-      color: colors.foreground,
-      marginBottom: 8,
-    },
-    input: {
-      height: 44,
-      borderWidth: 1,
-      borderColor: colors.input,
-      borderRadius: 10,
-      paddingHorizontal: 12,
-      fontSize: 16,
-      color: colors.foreground,
-      backgroundColor: colors.background,
-      fontFamily: "Inter_400Regular",
-    },
-    pickerButton: {
-      height: 44,
-      borderWidth: 1,
-      borderColor: colors.input,
-      borderRadius: 10,
-      paddingHorizontal: 12,
+    paramRow: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      backgroundColor: colors.background,
-    },
-    pickerText: {
-      fontSize: 16,
-      color: colors.foreground,
-      fontFamily: "Inter_400Regular",
-    },
-    pickerPlaceholder: {
-      fontSize: 16,
-      color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
-    },
-    divider: {
-      height: 1,
-      backgroundColor: colors.border,
-      marginVertical: 12,
-    },
-    moistureHeader: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
       marginBottom: 10,
     },
-    moistureValue: {
+    paramLabel: {
+      fontSize: 14,
+      fontFamily: "Inter_400Regular",
+      color: colors.foreground,
+      flex: 1,
+    },
+    inputBox: {
+      flexDirection: "row",
+      alignItems: "center",
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      height: 38,
+      minWidth: 80,
+      backgroundColor: colors.background,
+    },
+    inputPrefix: {
+      fontSize: 16,
+      color: colors.mutedForeground,
+      marginRight: 4,
+      fontFamily: "Inter_400Regular",
+    },
+    paramInput: {
+      fontSize: 16,
+      color: colors.foreground,
+      fontFamily: "Inter_600SemiBold",
+      minWidth: 50,
+      textAlign: "right",
+    },
+    moistureBig: {
       fontSize: 22,
       fontFamily: "Inter_700Bold",
       color: colors.primary,
     },
-    moistureBar: {
-      height: 8,
-      backgroundColor: colors.muted,
-      borderRadius: 4,
-      overflow: "hidden",
-      marginBottom: 10,
+    hintText: {
+      fontSize: 11,
+      fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground,
+      marginTop: 2,
+      marginBottom: 4,
     },
-    moistureFill: {
-      height: "100%",
-      borderRadius: 4,
+    divider: {
+      height: 1,
+      backgroundColor: colors.border,
+      marginVertical: 10,
     },
-    moistureControls: {
-      gap: 8,
-    },
-    moistureButtons: {
+    methodRow: {
       flexDirection: "row",
       gap: 8,
     },
-    moistureBtn: {
+    methodCard: {
       flex: 1,
-      height: 36,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.muted,
       alignItems: "center",
       justifyContent: "center",
+      paddingVertical: 12,
+      borderRadius: 12,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      backgroundColor: colors.background,
+      gap: 4,
     },
-    moistureBtnText: {
-      fontSize: 14,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.primary,
+    methodCardSelected: {
+      borderColor: colors.primary,
+      backgroundColor: colors.secondary,
     },
-    moistureHint: {
-      fontSize: 12,
-      fontFamily: "Inter_400Regular",
+    methodLabel: {
+      fontSize: 11,
+      fontFamily: "Inter_500Medium",
       color: colors.mutedForeground,
       textAlign: "center",
     },
-    toggleRow: {
-      flexDirection: "row",
-      gap: 8,
-    },
-    toggleBtn: {
-      flex: 1,
-      height: 40,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.muted,
-    },
-    toggleBtnActive: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    toggleBtnText: {
-      fontSize: 13,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
-    },
-    toggleBtnTextActive: {
-      color: colors.primaryForeground,
+    methodLabelSelected: {
+      color: colors.primary,
+      fontFamily: "Inter_600SemiBold",
     },
     calcButton: {
       height: 52,
       backgroundColor: colors.primary,
       borderRadius: 14,
-      flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
-      gap: 8,
       marginBottom: 16,
     },
     calcButtonText: {
@@ -697,61 +747,11 @@ function makeStyles(
       borderColor: colors.border,
       marginBottom: 12,
     },
-    resultProductLabel: {
-      fontSize: 20,
+    resultTitle: {
+      fontSize: 17,
       fontFamily: "Inter_700Bold",
-      color: colors.primary,
-      marginBottom: 2,
-    },
-    resultDoseLabel: {
-      fontSize: 14,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      marginBottom: 16,
-    },
-    pumpBox: {
-      backgroundColor: colors.primary,
-      borderRadius: 14,
-      padding: 20,
-      alignItems: "center",
-      marginBottom: 16,
-    },
-    pumpLabel: {
-      fontSize: 11,
-      fontFamily: "Inter_600SemiBold",
-      color: "rgba(255,255,255,0.7)",
-      letterSpacing: 1.2,
-      textTransform: "uppercase",
-      marginBottom: 6,
-    },
-    pumpValue: {
-      fontSize: 56,
-      fontFamily: "Inter_700Bold",
-      color: "#FFFFFF",
-      lineHeight: 64,
-    },
-    pumpUnit: {
-      fontSize: 18,
-      fontFamily: "Inter_500Medium",
-      color: "rgba(255,255,255,0.85)",
-      marginTop: 2,
-    },
-    resultGrid: {
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
-      paddingTop: 12,
-      marginBottom: 12,
-    },
-    schemeBox: {
-      backgroundColor: colors.secondary,
-      borderRadius: 8,
-      padding: 10,
-      marginBottom: 10,
-    },
-    schemeText: {
-      fontSize: 13,
-      fontFamily: "Inter_400Regular",
       color: colors.foreground,
+      marginBottom: 12,
     },
     warningBox: {
       flexDirection: "row",
@@ -760,89 +760,61 @@ function makeStyles(
       backgroundColor: "#FFF7F0",
       borderRadius: 8,
       padding: 10,
-      marginBottom: 12,
+      marginTop: 8,
     },
     warningText: {
-      fontSize: 13,
+      fontSize: 12,
       fontFamily: "Inter_400Regular",
       color: colors.warning,
       flex: 1,
     },
-    resultActions: {
-      flexDirection: "row",
-      gap: 10,
-      alignItems: "center",
+    schemeBox: {
+      backgroundColor: colors.secondary,
+      borderRadius: 8,
+      padding: 10,
+      marginTop: 8,
     },
-    saveBtn: {
-      flex: 1,
-      height: 44,
-      borderRadius: 10,
-      borderWidth: 1.5,
-      borderColor: colors.primary,
+    schemeText: {
+      fontSize: 13,
+      fontFamily: "Inter_400Regular",
+      color: colors.foreground,
+    },
+    saveRow: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
       gap: 6,
-    },
-    saveBtnDone: {
-      borderColor: colors.accent,
-    },
-    saveBtnText: {
-      fontSize: 14,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.primary,
-    },
-    resetBtn: {
-      width: 44,
-      height: 44,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: "rgba(0,0,0,0.4)",
-      justifyContent: "flex-end",
-    },
-    modalSheet: {
-      backgroundColor: colors.card,
-      borderTopLeftRadius: 20,
-      borderTopRightRadius: 20,
+      marginTop: 12,
       paddingTop: 12,
-      paddingHorizontal: 16,
-      maxHeight: "70%",
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
     },
-    modalHandle: {
-      width: 36,
-      height: 4,
-      backgroundColor: colors.border,
-      borderRadius: 2,
-      alignSelf: "center",
+    saveRowText: {
+      fontSize: 13,
+      fontFamily: "Inter_500Medium",
+      color: colors.mutedForeground,
+    },
+    shareRow: {
+      flexDirection: "row",
+      gap: 10,
       marginBottom: 12,
     },
-    modalTitle: {
-      fontSize: 17,
-      fontFamily: "Inter_700Bold",
-      color: colors.foreground,
-      marginBottom: 12,
-    },
-    modalItem: {
+    shareBtn: {
+      flex: 1,
+      height: 48,
+      borderRadius: 12,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
-      paddingVertical: 14,
+      justifyContent: "center",
+      gap: 8,
     },
-    modalItemActive: {},
-    modalItemText: {
-      fontSize: 16,
-      fontFamily: "Inter_400Regular",
-      color: colors.foreground,
-    },
-    modalItemTextActive: {
+    shareBtnText: {
+      fontSize: 14,
       fontFamily: "Inter_600SemiBold",
-      color: colors.primary,
+      color: colors.foreground,
     },
   });
 }

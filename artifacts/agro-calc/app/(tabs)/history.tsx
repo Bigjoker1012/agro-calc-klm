@@ -163,10 +163,10 @@ function HistoryItem({
       >
         <View>
           <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-            Помпа
+            Дозатор
           </Text>
           <Text style={{ fontSize: 20, fontFamily: "Inter_700Bold", color: colors.primary }}>
-            {item.pumpSetting} {item.pumpUnit}
+            {item.pumpLPH} {item.pumpUnit}
           </Text>
         </View>
         <View style={{ alignItems: "flex-end" }}>
