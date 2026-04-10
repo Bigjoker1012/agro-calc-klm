@@ -3,8 +3,9 @@
  *
  * Serves the output of build.js (static-build/) with two special routes:
  * - GET / or /manifest with expo-platform header → platform manifest JSON
- * - GET / without expo-platform → landing page HTML
- * Everything else falls through to static file serving from ./static-build/.
+ * - GET / without expo-platform + dist/ exists → web app (Expo web build)
+ * - GET / without expo-platform + no dist/ → landing page HTML
+ * Everything else falls through to static file serving.
  *
  * Zero external dependencies — uses only Node.js built-ins (http, fs, path).
  */
@@ -14,6 +15,7 @@ const fs = require("fs");
 const path = require("path");
 
 const STATIC_ROOT = path.resolve(__dirname, "..", "static-build");
+const WEB_DIST = path.resolve(__dirname, "..", "dist");
 const TEMPLATE_PATH = path.resolve(__dirname, "templates", "landing-page.html");
 const basePath = (process.env.BASE_PATH || "/").replace(/\/+$/, "");
 
@@ -34,6 +36,8 @@ const MIME_TYPES = {
   ".otf": "font/otf",
   ".map": "application/json",
 };
+
+const hasWebDist = fs.existsSync(WEB_DIST) && fs.existsSync(path.join(WEB_DIST, "index.html"));
 
 function getAppName() {
   try {
@@ -81,6 +85,37 @@ function serveLandingPage(req, res, landingPageTemplate, appName) {
   res.end(html);
 }
 
+function serveWebDist(urlPath, res) {
+  const safePath = path.normalize(urlPath).replace(/^(\.\.(\/|\\|$))+/, "");
+  const filePath = path.join(WEB_DIST, safePath);
+
+  if (!filePath.startsWith(WEB_DIST)) {
+    res.writeHead(403);
+    res.end("Forbidden");
+    return;
+  }
+
+  if (fs.existsSync(filePath) && !fs.statSync(filePath).isDirectory()) {
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = MIME_TYPES[ext] || "application/octet-stream";
+    const content = fs.readFileSync(filePath);
+    res.writeHead(200, { "content-type": contentType });
+    res.end(content);
+    return;
+  }
+
+  const indexPath = path.join(WEB_DIST, "index.html");
+  if (fs.existsSync(indexPath)) {
+    const content = fs.readFileSync(indexPath);
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(content);
+    return;
+  }
+
+  res.writeHead(404);
+  res.end("Not Found");
+}
+
 function serveStaticFile(urlPath, res) {
   const safePath = path.normalize(urlPath).replace(/^(\.\.(\/|\\|$))+/, "");
   const filePath = path.join(STATIC_ROOT, safePath);
@@ -107,6 +142,12 @@ function serveStaticFile(urlPath, res) {
 const landingPageTemplate = fs.readFileSync(TEMPLATE_PATH, "utf-8");
 const appName = getAppName();
 
+if (hasWebDist) {
+  console.log("Web build found at dist/ — serving web app for browser requests");
+} else {
+  console.log("No web build found — serving landing page for browser requests");
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
   let pathname = url.pathname;
@@ -115,15 +156,21 @@ const server = http.createServer((req, res) => {
     pathname = pathname.slice(basePath.length) || "/";
   }
 
-  if (pathname === "/" || pathname === "/manifest") {
-    const platform = req.headers["expo-platform"];
-    if (platform === "ios" || platform === "android") {
+  const platform = req.headers["expo-platform"];
+
+  if (platform === "ios" || platform === "android") {
+    if (pathname === "/" || pathname === "/manifest") {
       return serveManifest(platform, res);
     }
+    return serveStaticFile(pathname, res);
+  }
 
-    if (pathname === "/") {
-      return serveLandingPage(req, res, landingPageTemplate, appName);
-    }
+  if (hasWebDist) {
+    return serveWebDist(pathname, res);
+  }
+
+  if (pathname === "/") {
+    return serveLandingPage(req, res, landingPageTemplate, appName);
   }
 
   serveStaticFile(pathname, res);
@@ -131,5 +178,5 @@ const server = http.createServer((req, res) => {
 
 const port = parseInt(process.env.PORT || "3000", 10);
 server.listen(port, "0.0.0.0", () => {
-  console.log(`Serving static Expo build on port ${port}`);
+  console.log(`Serving on port ${port} | Web dist: ${hasWebDist ? "YES" : "NO"}`);
 });
