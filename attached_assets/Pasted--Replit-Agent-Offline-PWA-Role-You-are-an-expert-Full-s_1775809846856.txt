@@ -1,0 +1,88 @@
+Промпт для Replit Agent (Версия: Гибкий Offline PWA)
+Role: You are an expert Full-stack Developer. Build a professional PWA (Progressive Web App) for agricultural consultants called "AgroCalc КЛМ".
+
+Language & Localization:
+
+ALL interface text, buttons, labels, and reports must be in RUSSIAN.
+
+All data from tables (product names, units) must be displayed in RUSSIAN.
+
+Flexibility & Admin Control:
+
+Centralized Config: The app must NOT hardcode prices or dosages. It must fetch them from a "Settings" table (Google Sheets).
+
+Admin Capability: If the user changes a price (e.g., from 5.55 to 6.00) or a dosage range in the Google Sheet, the app should update its logic after the next sync.
+
+Core Tech Stack:
+
+Frontend: React (Vite), Tailwind CSS.
+
+PWA: VitePWA plugin for full offline support and "Install" prompt.
+
+Storage: IndexedDB (Dexie.js) to store the "Master Data" (prices, rules) and "Calculation Logs" locally.
+
+Backend: Node.js (Express) to act as a bridge to Google Sheets API.
+
+App Logic (Based on Russian Agricultural Context):
+
+Inputs (Main Screen):
+
+Культура (Dropdown: Злаковые, Бобовые, Кукуруза, Плющеное зерно).
+
+Масса (Тонн).
+
+Влажность % (Slider 20-80%).
+
+Способ внесения: [Комбайн] или [Опрыскиватель].
+
+Скорость уборки (Тонн/час).
+
+Calculation Engine:
+
+Use a "Rules Engine" that matches [Culture + Moisture] to a specific [Product + Dosage].
+
+SilKorm Pro: Price 5.55 BYN/kg, Density 1.2 kg/l. Dosage depends on table rules.
+
+EGALIS Ferment: Price 2330.84 BYN/kg. Calculation for dilution: 1 pack for X liters.
+
+Output: Total amount (kg and liters), Total Cost (BYN), and Pump Setting (L/min or ml/min).
+
+Offline Strategy:
+
+On first load, sync all Prices and Rules from Google Sheets to IndexedDB.
+
+If offline, use IndexedDB data.
+
+Save every calculation to a local "Log". Sync "Log" to Google Sheets once internet is restored.
+
+UI/UX Requirements (Russian):
+
+Professional, clean "Agro" theme.
+
+Screens: [Расчет], [История], [Настройки/Синхронизация].
+
+Result Screen: Big numbers for pump settings (L/min).
+
+Button: "Скачать расчет (PDF)" in Russian.
+
+Initial Task:
+
+Create a mock_data.js representing the Google Sheets structure (Products, Prices, Rules).
+
+Build the calculation logic that reads from this mock data.
+
+Ensure the UI is fully in Russian.
+
+Почему это даст тебе «гибкость»:
+Настройка через Google Sheets: В ТЗ я указал, что приложение не должно иметь жестко прописанных цен. Оно будет скачивать таблицу «Справочник цен» и «Правила дозирования» в память телефона. Ты поменял цифру в Excel/Google Sheets — менеджер нажал «Обновить» в приложении, и у него уже новые цены.
+
+Масштабируемость: Если завтра у вас появится третий консервант (например, «СилКорм Ультра»), ты просто добавишь его новой строкой в таблицу, и приложение само отобразит его в выборе, так как логика построена на поиске по базе, а не на жестком коде.
+
+Локализация: Я подчеркнул, что весь интерфейс должен быть на русском языке.
+
+Как работать с Replit Agent после запуска промпта:
+Если он сделает что-то не так, просто пиши ему уточнения на русском или английском:
+
+"Добавь на экран результата предупреждение: 'Внимание! Используйте средства защиты (перчатки, очки)' при выборе СилКорма"
+
+"Сделай так, чтобы при влажности ниже 60% поле подсвечивалось зеленым, а выше 70% — красным"
