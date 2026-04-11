@@ -32,18 +32,25 @@ interface LocalEntry {
   method?: string;
 }
 
+
 export default function HistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const [entries, setEntries] = useState<LocalEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const justClearedRef = React.useRef(false);
 
   const fetchHistory = useCallback(async () => {
+    // Skip reload if we just cleared — avoids dialog-close focus event overwriting cleared state
+    if (justClearedRef.current) {
+      justClearedRef.current = false;
+      return;
+    }
     setLoading(true);
     try {
       const local = await loadHistory();
-      const mapped: LocalEntry[] = local.map((r) => ({
+      setEntries(local.map((r) => ({
         id: r.id,
         timestamp: r.timestamp,
         productId: r.product.id,
@@ -56,8 +63,7 @@ export default function HistoryScreen() {
         pumpUnit: r.pumpUnit,
         totalCost: r.totalCost,
         method: r.input.method,
-      }));
-      setEntries(mapped);
+      })));
     } catch {
       setEntries([]);
     }
@@ -80,8 +86,15 @@ export default function HistoryScreen() {
           text: "Удалить",
           style: "destructive",
           onPress: async () => {
-            await clearHistory();
-            setEntries([]);
+            try {
+              // Set flag BEFORE clearing so the focus-event reload (web) is skipped
+              justClearedRef.current = true;
+              await clearHistory();
+              setEntries([]);
+            } catch {
+              justClearedRef.current = false;
+              Alert.alert("Ошибка", "Не удалось очистить историю");
+            }
           },
         },
       ]

@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
 import type { CalculationResult } from "./calculator";
 
 const HISTORY_KEY = "agro_calc_history_v1";
@@ -22,5 +23,13 @@ export async function loadHistory(): Promise<CalculationResult[]> {
 }
 
 export async function clearHistory(): Promise<void> {
-  await AsyncStorage.multiRemove([HISTORY_KEY, UNSYNCED_KEY]);
+  // Primary: AsyncStorage (works on native)
+  try { await AsyncStorage.removeItem(HISTORY_KEY); } catch {}
+  try { await AsyncStorage.removeItem(UNSYNCED_KEY); } catch {}
+
+  // Fallback: direct localStorage for web browsers
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    try { window.localStorage.removeItem(HISTORY_KEY); } catch {}
+    try { window.localStorage.removeItem(UNSYNCED_KEY); } catch {}
+  }
 }
