@@ -44,8 +44,10 @@ export default function Root({ children }: PropsWithChildren) {
               document.addEventListener('focusin', function(e) {
                 var tag = e.target && e.target.tagName;
                 if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+                  lockHScroll();
                   setTimeout(lockHScroll, 50);
-                  setTimeout(lockHScroll, 200);
+                  setTimeout(lockHScroll, 150);
+                  setTimeout(lockHScroll, 300);
                   setTimeout(lockHScroll, 500);
                 }
               }, true);

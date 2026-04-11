@@ -157,6 +157,15 @@ export default function CalculatorScreen() {
     Share.share({ message: text, title: "AgroCalc КЛМ — Расчёт" });
   };
 
+  const lockScrollX = useCallback(() => {
+    if (!isWeb) return;
+    const fix = () => { if (window.scrollX !== 0) window.scrollTo(0, window.scrollY); };
+    fix();
+    setTimeout(fix, 50);
+    setTimeout(fix, 200);
+    setTimeout(fix, 400);
+  }, [isWeb]);
+
   const styles = makeStyles(colors, isWeb, insets);
 
   return (
@@ -238,6 +247,7 @@ export default function CalculatorScreen() {
               style={styles.paramInput}
               value={mass}
               onChangeText={(v) => { setMass(v); reset(); }}
+              onFocus={lockScrollX}
               placeholder="0"
               placeholderTextColor={colors.mutedForeground}
               keyboardType="decimal-pad"
@@ -282,6 +292,7 @@ export default function CalculatorScreen() {
               style={styles.paramInput}
               value={speed}
               onChangeText={(v) => { setSpeed(v); reset(); }}
+              onFocus={lockScrollX}
               placeholder="0"
               placeholderTextColor={colors.mutedForeground}
               keyboardType="decimal-pad"
