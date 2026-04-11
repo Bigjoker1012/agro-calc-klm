@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Alert,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
@@ -14,19 +15,85 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import { loadHistory, clearHistory } from "@/utils/storage";
-import { formatCurrency, formatDate, type CalculationResult } from "@/utils/calculator";
+import { fetchServerHistory, type ServerHistoryRecord } from "@/services/sheetsApi";
+import { formatDate } from "@/utils/calculator";
+
+type HistoryEntry =
+  | { source: "local"; id: string; timestamp: string; productId: string; productName: string; culture: string; mass: number; moisture: number; speed: number; pumpLPH: number; pumpUnit: string; totalCost: number }
+  | { source: "server"; id: string; timestamp: string; productId: string; productName: string; culture: string; mass: number; moisture: number; method: string; pumpLPH: number; totalCost: number };
+
+function mapProductCode(code: string): { id: string; name: string } {
+  const c = (code ?? "").toUpperCase();
+  if (c.includes("EGALIS") || c === "EGALIS_FERMENT") return { id: "egalis", name: "EGALIS Ferment" };
+  if (c.includes("SILKORM") || c.includes("СИЛКОРМ")) return { id: "silkorm", name: "СилКорм® Про" };
+  return { id: "unknown", name: code || "—" };
+}
 
 export default function HistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
-  const [history, setHistory] = useState<CalculationResult[]>([]);
+  const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [source, setSource] = useState<"server" | "local" | "none">("none");
 
   const fetchHistory = useCallback(async () => {
     setLoading(true);
-    const data = await loadHistory();
-    setHistory(data);
+    try {
+      // Try server first (Google Sheets)
+      const serverRecords = await fetchServerHistory(100);
+      if (serverRecords.length > 0) {
+        const mapped: HistoryEntry[] = serverRecords.map((r, i) => {
+          const prod = mapProductCode(r.productCode);
+          return {
+            source: "server" as const,
+            id: `srv_${r.dateTime}_${i}`,
+            timestamp: r.dateTime,
+            productId: prod.id,
+            productName: prod.name,
+            culture: r.cultureCode,
+            mass: r.mass,
+            moisture: r.moisture,
+            method: r.method,
+            pumpLPH: r.pumpLPH ?? 0,
+            totalCost: r.totalPrice ?? 0,
+          };
+        });
+        setEntries(mapped);
+        setSource("server");
+        setLoading(false);
+        return;
+      }
+    } catch {}
+
+    // Fallback to local AsyncStorage
+    try {
+      const local = await loadHistory();
+      if (local.length > 0) {
+        const mapped: HistoryEntry[] = local.map((r) => ({
+          source: "local" as const,
+          id: r.id,
+          timestamp: r.timestamp,
+          productId: r.product.id,
+          productName: r.product.name,
+          culture: r.input.culture,
+          mass: r.input.mass,
+          moisture: r.input.moisture,
+          speed: r.input.speed,
+          pumpLPH: r.pumpLPH,
+          pumpUnit: r.pumpUnit,
+          totalCost: r.totalCost,
+        }));
+        setEntries(mapped);
+        setSource("local");
+      } else {
+        setEntries([]);
+        setSource("none");
+      }
+    } catch {
+      setEntries([]);
+      setSource("none");
+    }
     setLoading(false);
   }, []);
 
@@ -38,8 +105,8 @@ export default function HistoryScreen() {
 
   const handleClear = () => {
     Alert.alert(
-      "Очистить историю",
-      "Все сохранённые расчёты будут удалены. Продолжить?",
+      "Очистить локальную историю",
+      "Локальные расчёты будут удалены. Данные в Google Sheets сохранятся. Продолжить?",
       [
         { text: "Отмена", style: "cancel" },
         {
@@ -47,7 +114,7 @@ export default function HistoryScreen() {
           style: "destructive",
           onPress: async () => {
             await clearHistory();
-            setHistory([]);
+            fetchHistory();
           },
         },
       ]
@@ -59,12 +126,13 @@ export default function HistoryScreen() {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <Text style={styles.emptyText}>Загрузка...</Text>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.emptyText}>Загрузка истории...</Text>
       </View>
     );
   }
 
-  if (history.length === 0) {
+  if (entries.length === 0) {
     return (
       <View style={styles.centerContainer}>
         <Feather name="clock" size={48} color={colors.border} />
@@ -72,6 +140,14 @@ export default function HistoryScreen() {
         <Text style={styles.emptyText}>
           Выполните расчёт и нажмите «Сохранить в историю»
         </Text>
+        <TouchableOpacity
+          style={[styles.refreshBtn, { marginTop: 16 }]}
+          onPress={fetchHistory}
+          activeOpacity={0.7}
+        >
+          <Feather name="refresh-cw" size={14} color={colors.primary} />
+          <Text style={styles.refreshTxt}>Обновить</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -79,33 +155,46 @@ export default function HistoryScreen() {
   return (
     <View style={styles.container}>
       <FlatList
-        data={history}
+        data={entries}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <View style={styles.listHeader}>
-            <Text style={styles.countText}>{history.length} расчётов</Text>
-            <TouchableOpacity onPress={handleClear} activeOpacity={0.7}>
-              <Text style={styles.clearText}>Очистить</Text>
-            </TouchableOpacity>
+            <View style={{ gap: 2 }}>
+              <Text style={styles.countText}>{entries.length} расчётов</Text>
+              <Text style={styles.sourceText}>
+                {source === "server" ? "✓ из Google Sheets" : "из локального хранилища"}
+              </Text>
+            </View>
+            <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
+              <TouchableOpacity onPress={fetchHistory} activeOpacity={0.7}>
+                <Feather name="refresh-cw" size={16} color={colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleClear} activeOpacity={0.7}>
+                <Text style={styles.clearText}>Очистить</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         }
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-        renderItem={({ item }) => <HistoryItem item={item} colors={colors} />}
+        renderItem={({ item }) => <HistoryCard item={item} colors={colors} />}
       />
     </View>
   );
 }
 
-function HistoryItem({
+function HistoryCard({
   item,
   colors,
 }: {
-  item: CalculationResult;
+  item: HistoryEntry;
   colors: ReturnType<typeof useColors>;
 }) {
-  const isEgalis = item.product.id === "egalis";
+  const isEgalis = item.productId === "egalis";
+  const pumpStr = item.source === "local" && "pumpUnit" in item
+    ? `${item.pumpLPH} ${item.pumpUnit}`
+    : `${item.pumpLPH} л/ч`;
 
   return (
     <View
@@ -117,6 +206,7 @@ function HistoryItem({
         borderColor: colors.border,
       }}
     >
+      {/* Row 1: date + product badge */}
       <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
         <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
           {formatDate(item.timestamp)}
@@ -136,21 +226,29 @@ function HistoryItem({
               color: isEgalis ? "#2563EB" : colors.primary,
             }}
           >
-            {item.product.name}
+            {item.productName}
           </Text>
         </View>
       </View>
 
-      <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 4 }}>
-        {item.input.culture}
+      {/* Culture */}
+      <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 8 }}>
+        {item.culture}
       </Text>
 
+      {/* Chips row */}
       <View style={{ flexDirection: "row", gap: 16, marginBottom: 10 }}>
-        <InfoChip label="Масса" value={`${item.input.mass} т`} colors={colors} />
-        <InfoChip label="Влажность" value={`${item.input.moisture}%`} colors={colors} />
-        <InfoChip label="Скорость" value={`${item.input.speed} т/ч`} colors={colors} />
+        <InfoChip label="Масса" value={`${item.mass} т`} colors={colors} />
+        <InfoChip label="Влажность" value={`${item.moisture}%`} colors={colors} />
+        {item.source === "local" && "speed" in item && (
+          <InfoChip label="Скорость" value={`${item.speed} т/ч`} colors={colors} />
+        )}
+        {item.source === "server" && item.method && (
+          <InfoChip label="Внесение" value={item.method} colors={colors} />
+        )}
       </View>
 
+      {/* Bottom: pump + cost */}
       <View
         style={{
           flexDirection: "row",
@@ -166,17 +264,19 @@ function HistoryItem({
             Дозатор
           </Text>
           <Text style={{ fontSize: 20, fontFamily: "Inter_700Bold", color: colors.primary }}>
-            {item.pumpLPH} {item.pumpUnit}
+            {pumpStr}
           </Text>
         </View>
-        <View style={{ alignItems: "flex-end" }}>
-          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-            Стоимость
-          </Text>
-          <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: colors.foreground }}>
-            {formatCurrency(item.totalCost)} BYN
-          </Text>
-        </View>
+        {item.totalCost > 0 && (
+          <View style={{ alignItems: "flex-end" }}>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+              Стоимость
+            </Text>
+            <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: colors.foreground }}>
+              {item.totalCost.toFixed(2)} BYN
+            </Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -209,10 +309,7 @@ function makeStyles(
   insets: { top: number; bottom: number }
 ) {
   return StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
+    container: { flex: 1, backgroundColor: colors.background },
     listContent: {
       padding: 16,
       paddingTop: isWeb ? Math.max(insets.top, 67) + 8 : 8,
@@ -224,16 +321,9 @@ function makeStyles(
       alignItems: "center",
       marginBottom: 14,
     },
-    countText: {
-      fontSize: 14,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
-    },
-    clearText: {
-      fontSize: 14,
-      fontFamily: "Inter_500Medium",
-      color: colors.destructive,
-    },
+    countText: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
+    sourceText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.primary },
+    clearText: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.destructive },
     centerContainer: {
       flex: 1,
       backgroundColor: colors.background,
@@ -242,16 +332,9 @@ function makeStyles(
       padding: 32,
       gap: 12,
     },
-    emptyTitle: {
-      fontSize: 18,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.foreground,
-    },
-    emptyText: {
-      fontSize: 14,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      textAlign: "center",
-    },
+    emptyTitle: { fontSize: 18, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    emptyText: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center" },
+    refreshBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: colors.primary },
+    refreshTxt: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.primary },
   });
 }

@@ -68,6 +68,42 @@ export interface HistoryRecord {
   comment?: string;
 }
 
+export async function getHistory(limit = 100): Promise<HistoryRecord[]> {
+  const connectors = getConnectors();
+  const res = await connectors.proxy(
+    "google-sheet",
+    `/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent("История_шаблон!A:Q")}`,
+    { method: "GET" }
+  );
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  const values = data.values as string[][] | undefined;
+  if (!values || values.length < 2) return [];
+  // Skip header row, take last `limit` data rows, newest first
+  const rows = values.slice(1).filter((r) => r.some((c) => c?.trim()));
+  return rows
+    .slice(-limit)
+    .reverse()
+    .map((row) => ({
+      dateTime:     row[0]  ?? "",
+      user:         row[1]  ?? "",
+      client:       row[2]  ?? "",
+      productCode:  row[3]  ?? "",
+      cultureCode:  row[4]  ?? "",
+      mass:         parseFloat(row[5]  ?? "0") || 0,
+      moisture:     parseFloat(row[6]  ?? "0") || 0,
+      method:       row[7]  ?? "",
+      dose:         parseFloat(row[8]  ?? "0") || 0,
+      doseUnit:     row[9]  ?? "",
+      totalProduct: parseFloat(row[10] ?? "0") || 0,
+      totalWater:   parseFloat(row[11] ?? "0") || undefined,
+      pumpLPH:      parseFloat(row[12] ?? "0") || undefined,
+      pumpLPM:      parseFloat(row[13] ?? "0") || undefined,
+      totalPrice:   parseFloat(row[14] ?? "0") || undefined,
+      comment:      row[15] ?? "",
+    }));
+}
+
 export async function appendHistory(record: HistoryRecord) {
   const connectors = getConnectors();
   const row = [
