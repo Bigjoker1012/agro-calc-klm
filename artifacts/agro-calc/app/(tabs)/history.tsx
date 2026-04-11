@@ -105,8 +105,8 @@ export default function HistoryScreen() {
 
   const handleClear = () => {
     Alert.alert(
-      "Очистить локальную историю",
-      "Локальные расчёты будут удалены. Данные в Google Sheets сохранятся. Продолжить?",
+      "Очистить историю",
+      "История на этом устройстве будет очищена. Данные в Google Sheets сохранятся. Продолжить?",
       [
         { text: "Отмена", style: "cancel" },
         {
@@ -114,7 +114,9 @@ export default function HistoryScreen() {
           style: "destructive",
           onPress: async () => {
             await clearHistory();
-            fetchHistory();
+            // Don't reload from server — just show empty view
+            setEntries([]);
+            setSource("none");
           },
         },
       ]
