@@ -1,5 +1,7 @@
 import { PRODUCTS, RULES, type Product, type Rule } from "../constants/mockData";
 
+export type ProductMode = "auto" | "silkorm" | "egalis";
+
 export interface CalculationInput {
   culture: string;
   mass: number;
@@ -7,6 +9,7 @@ export interface CalculationInput {
   method: "combine" | "sprayer" | "manual";
   speed: number;
   egalisScheme: 2 | 8;
+  productMode: ProductMode;
 }
 
 export interface CalculationResult {
@@ -15,6 +18,8 @@ export interface CalculationResult {
   dose: number;
   doseDisplay: string;
   reason: string;
+  isForcedProduct: boolean;
+  egalisWarning?: string;
   totalLiters?: number;
   totalKg: number;
   totalCost: number;
@@ -26,6 +31,56 @@ export interface CalculationResult {
   input: CalculationInput;
   timestamp: string;
   id: string;
+}
+
+export interface MoistureRisk {
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  icon: "alert-triangle" | "check-circle" | "info";
+  text: string;
+  level: "warn-low" | "optimal" | "warn-high" | "danger";
+}
+
+export function getMoistureRisk(moisture: number): MoistureRisk {
+  if (moisture < 25) {
+    return {
+      color: "#92400E",
+      bgColor: "#FFFBEB",
+      borderColor: "#FCD34D",
+      icon: "alert-triangle",
+      text: "Сырьё сухое — риск нагрева и плесени",
+      level: "warn-low",
+    };
+  }
+  if (moisture <= 55) {
+    return {
+      color: "#1E40AF",
+      bgColor: "#EFF6FF",
+      borderColor: "#93C5FD",
+      icon: "check-circle",
+      text: "Оптимальный диапазон влажности",
+      level: "optimal",
+    };
+  }
+  if (moisture <= 75) {
+    return {
+      color: "#9A3412",
+      bgColor: "#FFF7ED",
+      borderColor: "#FDBA74",
+      icon: "alert-triangle",
+      text: "Высокая влажность — возможны потери сока",
+      level: "warn-high",
+    };
+  }
+  return {
+    color: "#991B1B",
+    bgColor: "#FEF2F2",
+    borderColor: "#FCA5A5",
+    icon: "alert-triangle",
+    text: "Очень высокая влажность — риск маслянокислого брожения",
+    level: "danger",
+  };
 }
 
 export function findRule(culture: string, moisture: number): Rule | null {
@@ -58,9 +113,73 @@ function buildReason(rule: Rule, moisture: number): string {
   return name;
 }
 
+const SILKORM_FALLBACK_DOSE = 3;
+const EGALIS_DEFAULT_DOSE_G = 50;
+
 export function calculate(input: CalculationInput): CalculationResult | null {
-  const rule = findRule(input.culture, input.moisture);
-  if (!rule) return null;
+  const naturalRule = findRule(input.culture, input.moisture);
+
+  let rule: Rule;
+  let isForcedProduct = false;
+  let egalisWarning: string | undefined;
+
+  if (input.productMode === "auto") {
+    if (!naturalRule) return null;
+    rule = naturalRule;
+  } else if (input.productMode === "silkorm") {
+    isForcedProduct = naturalRule?.productId !== "silkorm";
+    if (!naturalRule) {
+      rule = {
+        id: "forced-silkorm",
+        culture: input.culture,
+        moistureMin: 0,
+        moistureMax: 100,
+        productId: "silkorm",
+        doseMin: SILKORM_FALLBACK_DOSE,
+        doseMax: SILKORM_FALLBACK_DOSE,
+        unit: "л/т",
+      };
+    } else if (naturalRule.productId === "egalis") {
+      rule = {
+        ...naturalRule,
+        id: "forced-silkorm",
+        productId: "silkorm",
+        doseMin: SILKORM_FALLBACK_DOSE,
+        doseMax: SILKORM_FALLBACK_DOSE,
+        unit: "л/т",
+      };
+    } else {
+      rule = naturalRule;
+    }
+  } else {
+    isForcedProduct = naturalRule?.productId !== "egalis";
+    if (!naturalRule) {
+      rule = {
+        id: "forced-egalis",
+        culture: input.culture,
+        moistureMin: 0,
+        moistureMax: 100,
+        productId: "egalis",
+        doseMin: EGALIS_DEFAULT_DOSE_G,
+        doseMax: EGALIS_DEFAULT_DOSE_G,
+        unit: "г/т",
+      };
+    } else if (naturalRule.productId === "silkorm") {
+      rule = {
+        ...naturalRule,
+        id: "forced-egalis",
+        productId: "egalis",
+        doseMin: EGALIS_DEFAULT_DOSE_G,
+        doseMax: EGALIS_DEFAULT_DOSE_G,
+        unit: "г/т",
+      };
+    } else {
+      rule = naturalRule;
+    }
+    if (input.moisture > 70) {
+      egalisWarning = "EGALIS Ferment не рекомендован при влажности выше 70% — повышен риск потерь эффективности";
+    }
+  }
 
   const product = PRODUCTS.find((p) => p.id === rule.productId);
   if (!product) return null;
@@ -71,7 +190,9 @@ export function calculate(input: CalculationInput): CalculationResult | null {
       ? `${rule.doseMin}`
       : `${rule.doseMin}–${rule.doseMax}`;
 
-  const reason = buildReason(rule, input.moisture);
+  const reason = isForcedProduct
+    ? `выбран вручную (обычно: ${naturalRule ? naturalRule.culture.toLowerCase() : input.culture.toLowerCase()})`
+    : buildReason(rule, input.moisture);
 
   let totalLiters: number | undefined;
   let totalKg: number;
@@ -123,6 +244,8 @@ export function calculate(input: CalculationInput): CalculationResult | null {
     dose,
     doseDisplay,
     reason,
+    isForcedProduct,
+    egalisWarning,
     totalLiters,
     totalKg,
     totalCost,
@@ -175,6 +298,7 @@ export function buildShareText(result: CalculationResult): string {
     "",
     "РЕКОМЕНДАЦИЯ:",
     `Продукт: ${result.product.name}`,
+    result.isForcedProduct ? "(выбран вручную)" : "",
     `Норма: ${result.doseDisplay} ${result.rule.unit}`,
     result.totalLiters !== undefined
       ? `Итого препарата: ${result.totalLiters} л`
@@ -184,6 +308,7 @@ export function buildShareText(result: CalculationResult): string {
       : "",
     `Настройка дозатора: ${result.pumpLPH} ${result.pumpUnit}`,
     `Цена партии: ${formatCurrency(result.totalCost)} BYN`,
+    result.egalisWarning ? `\n⚠️ ${result.egalisWarning}` : "",
   ];
   return lines.filter(Boolean).join("\n");
 }
