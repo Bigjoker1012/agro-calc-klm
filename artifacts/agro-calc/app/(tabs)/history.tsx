@@ -15,84 +15,51 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import { loadHistory, clearHistory } from "@/utils/storage";
-import { fetchServerHistory, type ServerHistoryRecord } from "@/services/sheetsApi";
 import { formatDate } from "@/utils/calculator";
 
-type HistoryEntry =
-  | { source: "local"; id: string; timestamp: string; productId: string; productName: string; culture: string; mass: number; moisture: number; speed: number; pumpLPH: number; pumpUnit: string; totalCost: number }
-  | { source: "server"; id: string; timestamp: string; productId: string; productName: string; culture: string; mass: number; moisture: number; method: string; pumpLPH: number; totalCost: number };
-
-function mapProductCode(code: string): { id: string; name: string } {
-  const c = (code ?? "").toUpperCase();
-  if (c.includes("EGALIS") || c === "EGALIS_FERMENT") return { id: "egalis", name: "EGALIS Ferment" };
-  if (c.includes("SILKORM") || c.includes("СИЛКОРМ")) return { id: "silkorm", name: "СилКорм® Про" };
-  return { id: "unknown", name: code || "—" };
+interface LocalEntry {
+  id: string;
+  timestamp: string;
+  productId: string;
+  productName: string;
+  culture: string;
+  mass: number;
+  moisture: number;
+  speed: number;
+  pumpLPH: number;
+  pumpUnit: string;
+  totalCost: number;
+  method?: string;
 }
 
 export default function HistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
-  const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const [entries, setEntries] = useState<LocalEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [source, setSource] = useState<"server" | "local" | "none">("none");
 
   const fetchHistory = useCallback(async () => {
     setLoading(true);
     try {
-      // Try server first (Google Sheets)
-      const serverRecords = await fetchServerHistory(100);
-      if (serverRecords.length > 0) {
-        const mapped: HistoryEntry[] = serverRecords.map((r, i) => {
-          const prod = mapProductCode(r.productCode);
-          return {
-            source: "server" as const,
-            id: `srv_${r.dateTime}_${i}`,
-            timestamp: r.dateTime,
-            productId: prod.id,
-            productName: prod.name,
-            culture: r.cultureCode,
-            mass: r.mass,
-            moisture: r.moisture,
-            method: r.method,
-            pumpLPH: r.pumpLPH ?? 0,
-            totalCost: r.totalPrice ?? 0,
-          };
-        });
-        setEntries(mapped);
-        setSource("server");
-        setLoading(false);
-        return;
-      }
-    } catch {}
-
-    // Fallback to local AsyncStorage
-    try {
       const local = await loadHistory();
-      if (local.length > 0) {
-        const mapped: HistoryEntry[] = local.map((r) => ({
-          source: "local" as const,
-          id: r.id,
-          timestamp: r.timestamp,
-          productId: r.product.id,
-          productName: r.product.name,
-          culture: r.input.culture,
-          mass: r.input.mass,
-          moisture: r.input.moisture,
-          speed: r.input.speed,
-          pumpLPH: r.pumpLPH,
-          pumpUnit: r.pumpUnit,
-          totalCost: r.totalCost,
-        }));
-        setEntries(mapped);
-        setSource("local");
-      } else {
-        setEntries([]);
-        setSource("none");
-      }
+      const mapped: LocalEntry[] = local.map((r) => ({
+        id: r.id,
+        timestamp: r.timestamp,
+        productId: r.product.id,
+        productName: r.product.name,
+        culture: r.input.culture,
+        mass: r.input.mass,
+        moisture: r.input.moisture,
+        speed: r.input.speed,
+        pumpLPH: r.pumpLPH,
+        pumpUnit: r.pumpUnit,
+        totalCost: r.totalCost,
+        method: r.input.method,
+      }));
+      setEntries(mapped);
     } catch {
       setEntries([]);
-      setSource("none");
     }
     setLoading(false);
   }, []);
@@ -106,7 +73,7 @@ export default function HistoryScreen() {
   const handleClear = () => {
     Alert.alert(
       "Очистить историю",
-      "История на этом устройстве будет очищена. Данные в Google Sheets сохранятся. Продолжить?",
+      "Все сохранённые расчёты будут удалены с этого устройства. Продолжить?",
       [
         { text: "Отмена", style: "cancel" },
         {
@@ -114,9 +81,7 @@ export default function HistoryScreen() {
           style: "destructive",
           onPress: async () => {
             await clearHistory();
-            // Don't reload from server — just show empty view
             setEntries([]);
-            setSource("none");
           },
         },
       ]
@@ -129,7 +94,6 @@ export default function HistoryScreen() {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.emptyText}>Загрузка истории...</Text>
       </View>
     );
   }
@@ -142,14 +106,6 @@ export default function HistoryScreen() {
         <Text style={styles.emptyText}>
           Выполните расчёт и нажмите «Сохранить в историю»
         </Text>
-        <TouchableOpacity
-          style={[styles.refreshBtn, { marginTop: 16 }]}
-          onPress={fetchHistory}
-          activeOpacity={0.7}
-        >
-          <Feather name="refresh-cw" size={14} color={colors.primary} />
-          <Text style={styles.refreshTxt}>Обновить</Text>
-        </TouchableOpacity>
       </View>
     );
   }
@@ -163,20 +119,10 @@ export default function HistoryScreen() {
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <View style={styles.listHeader}>
-            <View style={{ gap: 2 }}>
-              <Text style={styles.countText}>{entries.length} расчётов</Text>
-              <Text style={styles.sourceText}>
-                {source === "server" ? "✓ из Google Sheets" : "из локального хранилища"}
-              </Text>
-            </View>
-            <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
-              <TouchableOpacity onPress={fetchHistory} activeOpacity={0.7}>
-                <Feather name="refresh-cw" size={16} color={colors.primary} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleClear} activeOpacity={0.7}>
-                <Text style={styles.clearText}>Очистить</Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.countText}>{entries.length} расчётов</Text>
+            <TouchableOpacity onPress={handleClear} activeOpacity={0.7}>
+              <Text style={styles.clearText}>Очистить</Text>
+            </TouchableOpacity>
           </View>
         }
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
@@ -186,17 +132,21 @@ export default function HistoryScreen() {
   );
 }
 
+const METHOD_LABELS: Record<string, string> = {
+  combine: "через комбайн",
+  sprayer: "опрыскиватель",
+  manual: "ручное",
+};
+
 function HistoryCard({
   item,
   colors,
 }: {
-  item: HistoryEntry;
+  item: LocalEntry;
   colors: ReturnType<typeof useColors>;
 }) {
   const isEgalis = item.productId === "egalis";
-  const pumpStr = item.source === "local" && "pumpUnit" in item
-    ? `${item.pumpLPH} ${item.pumpUnit}`
-    : `${item.pumpLPH} л/ч`;
+  const methodLabel = item.method ? (METHOD_LABELS[item.method] ?? item.method) : null;
 
   return (
     <View
@@ -208,7 +158,6 @@ function HistoryCard({
         borderColor: colors.border,
       }}
     >
-      {/* Row 1: date + product badge */}
       <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
         <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
           {formatDate(item.timestamp)}
@@ -233,24 +182,21 @@ function HistoryCard({
         </View>
       </View>
 
-      {/* Culture */}
       <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 8 }}>
         {item.culture}
       </Text>
 
-      {/* Chips row */}
       <View style={{ flexDirection: "row", gap: 16, marginBottom: 10 }}>
         <InfoChip label="Масса" value={`${item.mass} т`} colors={colors} />
         <InfoChip label="Влажность" value={`${item.moisture}%`} colors={colors} />
-        {item.source === "local" && "speed" in item && (
+        {item.speed > 0 && (
           <InfoChip label="Скорость" value={`${item.speed} т/ч`} colors={colors} />
         )}
-        {item.source === "server" && item.method && (
-          <InfoChip label="Внесение" value={item.method} colors={colors} />
+        {methodLabel && (
+          <InfoChip label="Внесение" value={methodLabel} colors={colors} />
         )}
       </View>
 
-      {/* Bottom: pump + cost */}
       <View
         style={{
           flexDirection: "row",
@@ -266,7 +212,7 @@ function HistoryCard({
             Дозатор
           </Text>
           <Text style={{ fontSize: 20, fontFamily: "Inter_700Bold", color: colors.primary }}>
-            {pumpStr}
+            {item.pumpLPH} {item.pumpUnit}
           </Text>
         </View>
         {item.totalCost > 0 && (
@@ -324,7 +270,6 @@ function makeStyles(
       marginBottom: 14,
     },
     countText: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
-    sourceText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.primary },
     clearText: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.destructive },
     centerContainer: {
       flex: 1,
@@ -336,7 +281,5 @@ function makeStyles(
     },
     emptyTitle: { fontSize: 18, fontFamily: "Inter_600SemiBold", color: colors.foreground },
     emptyText: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center" },
-    refreshBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: colors.primary },
-    refreshTxt: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.primary },
   });
 }
