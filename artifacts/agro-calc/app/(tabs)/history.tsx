@@ -120,7 +120,8 @@ export default function HistoryScreen() {
         ListHeaderComponent={
           <View style={styles.listHeader}>
             <Text style={styles.countText}>{entries.length} расчётов</Text>
-            <TouchableOpacity onPress={handleClear} activeOpacity={0.7}>
+            <TouchableOpacity style={styles.clearBtn} onPress={handleClear} activeOpacity={0.7}>
+              <Feather name="trash-2" size={13} color={colors.destructive} />
               <Text style={styles.clearText}>Очистить</Text>
             </TouchableOpacity>
           </View>
@@ -270,7 +271,17 @@ function makeStyles(
       marginBottom: 14,
     },
     countText: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
-    clearText: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.destructive },
+    clearBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 8,
+      borderWidth: 1.5,
+      borderColor: colors.destructive,
+    },
+    clearText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.destructive },
     centerContainer: {
       flex: 1,
       backgroundColor: colors.background,
