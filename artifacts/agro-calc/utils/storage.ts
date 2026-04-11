@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { CalculationResult } from "./calculator";
 
 const HISTORY_KEY = "agro_calc_history_v1";
+const UNSYNCED_KEY = "sheets_unsynced_v1";
 
 export async function saveCalculation(
   result: CalculationResult
@@ -21,5 +22,5 @@ export async function loadHistory(): Promise<CalculationResult[]> {
 }
 
 export async function clearHistory(): Promise<void> {
-  await AsyncStorage.removeItem(HISTORY_KEY);
+  await AsyncStorage.multiRemove([HISTORY_KEY, UNSYNCED_KEY]);
 }
