@@ -17,13 +17,10 @@ export default function Root({ children }: PropsWithChildren) {
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{
           __html: `
-            html, body, #root {
-              overflow-x: hidden !important;
-              max-width: 100vw !important;
-              width: 100%;
-              box-sizing: border-box;
-            }
-            body {
+            html, body {
+              overflow-x: hidden;
+              max-width: 100vw;
+              overscroll-behavior-x: none;
               margin: 0;
               padding: 0;
               -webkit-text-size-adjust: 100%;
@@ -31,6 +28,33 @@ export default function Root({ children }: PropsWithChildren) {
             input, textarea, select {
               font-size: 16px !important;
             }
+          `
+        }} />
+        <script dangerouslySetInnerHTML={{
+          __html: `
+            (function () {
+              function lockHScroll() {
+                if (window.scrollX !== 0) {
+                  window.scrollTo(0, window.scrollY);
+                }
+              }
+
+              window.addEventListener('scroll', lockHScroll, { passive: true });
+
+              document.addEventListener('focusin', function(e) {
+                var tag = e.target && e.target.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+                  setTimeout(lockHScroll, 50);
+                  setTimeout(lockHScroll, 200);
+                  setTimeout(lockHScroll, 500);
+                }
+              }, true);
+
+              if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', lockHScroll);
+                window.visualViewport.addEventListener('scroll', lockHScroll);
+              }
+            })();
           `
         }} />
       </head>
