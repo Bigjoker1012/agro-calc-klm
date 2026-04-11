@@ -20,7 +20,7 @@ SplashScreen.preventAutoHideAsync();
 if (Platform.OS === "web" && typeof document !== "undefined") {
   const style = document.createElement("style");
   style.textContent = [
-    "html, body { overflow-x: hidden !important; max-width: 100vw !important; position: relative; }",
+    "html, body { overflow-x: hidden !important; max-width: 100vw !important; overscroll-behavior-x: none; }",
     "input, textarea, select { font-size: 16px !important; }",
   ].join("\n");
   document.head.appendChild(style);
@@ -49,6 +49,38 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const lockHScroll = () => {
+      if (window.scrollX !== 0) window.scrollTo(0, window.scrollY);
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        lockHScroll();
+        setTimeout(lockHScroll, 50);
+        setTimeout(lockHScroll, 150);
+        setTimeout(lockHScroll, 350);
+        setTimeout(lockHScroll, 600);
+      }
+    };
+    window.addEventListener("scroll", lockHScroll, { passive: true });
+    document.addEventListener("focusin", onFocusIn, true);
+    const vv = (window as any).visualViewport;
+    if (vv) {
+      vv.addEventListener("resize", lockHScroll);
+      vv.addEventListener("scroll", lockHScroll);
+    }
+    return () => {
+      window.removeEventListener("scroll", lockHScroll);
+      document.removeEventListener("focusin", onFocusIn, true);
+      if (vv) {
+        vv.removeEventListener("resize", lockHScroll);
+        vv.removeEventListener("scroll", lockHScroll);
+      }
+    };
+  }, []);
 
   if (!fontsLoaded && !fontError) return null;
 
