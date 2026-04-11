@@ -28,6 +28,7 @@ import {
   type ProductMode,
 } from "@/utils/calculator";
 import { saveCalculation } from "@/utils/storage";
+import { queueHistoryRecord, flushHistoryToSheets } from "@/services/sheetsApi";
 
 const MOISTURE_MIN = 0;
 const MOISTURE_MAX = 100;
@@ -55,16 +56,20 @@ export default function CalculatorScreen() {
   const [moisture, setMoisture] = useState(40);
   const [method, setMethod] = useState<"combine" | "sprayer" | "manual">("combine");
   const [speed, setSpeed] = useState("");
-  const [egalisScheme, setEgalisScheme] = useState<2 | 8>(2);
+  const [egalisPackSize, setEgalisPackSize] = useState<50 | 200>(50);
+  const [egalisWaterPerPack, setEgalisWaterPerPack] = useState<50 | 200>(50);
+  const [layerMode, setLayerMode] = useState(false);
   const [result, setResult] = useState<CalculationResult | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const showEgalisScheme =
-    productMode === "egalis" ||
-    (productMode === "auto" && (culture === "Силос / Сенаж" || culture === "Влажное зерно"));
   const moistureHint = culture ? CULTURE_MOISTURE_HINTS[culture] : null;
   const ruleExists = culture ? findRule(culture, moisture) !== null : null;
   const moistureRisk = getMoistureRisk(moisture);
+
+  const effectiveProduct = result?.product.id ?? (productMode === "silkorm" ? "silkorm" : productMode === "egalis" ? "egalis" : null);
+  const showEgalisFields = productMode === "egalis" || (productMode === "auto" && result?.product.id === "egalis");
+  const showLayerMode = (productMode === "silkorm" || (productMode === "auto" && result?.product.id === "silkorm")) && result?.rule?.layerMode;
+  const canLayerMode = productMode === "silkorm" || (productMode === "auto" && !!(culture && findRule(culture, moisture)?.layerMode));
 
   const reset = () => { setResult(null); setSaved(false); };
 
@@ -102,7 +107,9 @@ export default function CalculatorScreen() {
       moisture,
       method,
       speed: speedNum,
-      egalisScheme,
+      egalisPackSize,
+      egalisWaterPerPack,
+      layerMode,
       productMode,
     });
 
@@ -123,6 +130,8 @@ export default function CalculatorScreen() {
     if (!result) return;
     try {
       await saveCalculation(result);
+      await queueHistoryRecord(result);
+      flushHistoryToSheets().catch(() => {});
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setSaved(true);
     } catch {
@@ -307,36 +316,68 @@ export default function CalculatorScreen() {
           })}
         </View>
 
-        {showEgalisScheme && (
+        {/* EGALIS Pack & Water Selectors */}
+        {(productMode === "egalis") && (
           <>
             <View style={styles.divider} />
-            <Text style={[styles.paramLabel, { marginBottom: 8 }]}>Схема разведения EGALIS</Text>
+            <Text style={styles.condLabel}>Вариант пакета EGALIS</Text>
             <View style={styles.methodRow}>
-              {([2, 8] as const).map((scheme) => (
+              {([50, 200] as const).map((size) => (
                 <TouchableOpacity
-                  key={scheme}
-                  style={[
-                    styles.methodCard,
-                    egalisScheme === scheme && styles.methodCardSelected,
-                    { flex: 1 },
-                  ]}
-                  onPress={() => { setEgalisScheme(scheme); reset(); }}
+                  key={size}
+                  style={[styles.methodCard, egalisPackSize === size && styles.methodCardSelected, { flex: 1 }]}
+                  onPress={() => { setEgalisPackSize(size); reset(); }}
                   activeOpacity={0.75}
                 >
-                  <Feather
-                    name="droplet"
-                    size={20}
-                    color={egalisScheme === scheme ? colors.primary : colors.mutedForeground}
-                  />
-                  <Text style={[styles.methodLabel, egalisScheme === scheme && styles.methodLabelSelected]}>
-                    {scheme === 2 ? "50 г / 50 л" : "50 г / 200 л"}
+                  <Feather name="package" size={20} color={egalisPackSize === size ? colors.primary : colors.mutedForeground} />
+                  <Text style={[styles.methodLabel, egalisPackSize === size && styles.methodLabelSelected]}>
+                    {size} г
                   </Text>
-                  <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
-                    ({scheme} л/т)
+                  <Text style={styles.methodSubLabel}>
+                    {size === 50 ? "на 25 т" : "на 100 т"}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
+
+            <View style={[styles.divider, { marginTop: 12 }]} />
+            <Text style={styles.condLabel}>Рабочий раствор на пакет</Text>
+            <View style={styles.methodRow}>
+              {([50, 200] as const).map((vol) => (
+                <TouchableOpacity
+                  key={vol}
+                  style={[styles.methodCard, egalisWaterPerPack === vol && styles.methodCardSelected, { flex: 1 }]}
+                  onPress={() => { setEgalisWaterPerPack(vol); reset(); }}
+                  activeOpacity={0.75}
+                >
+                  <Feather name="droplet" size={20} color={egalisWaterPerPack === vol ? colors.primary : colors.mutedForeground} />
+                  <Text style={[styles.methodLabel, egalisWaterPerPack === vol && styles.methodLabelSelected]}>
+                    {vol} л
+                  </Text>
+                  <Text style={styles.methodSubLabel}>воды/пакет</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+
+        {/* Layer Mode for СилКорм */}
+        {(productMode === "silkorm" || (productMode === "auto" && canLayerMode)) && (
+          <>
+            <View style={styles.divider} />
+            <TouchableOpacity
+              style={styles.layerModeRow}
+              onPress={() => { setLayerMode((v) => !v); reset(); }}
+              activeOpacity={0.75}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.condLabel}>Послойное внесение</Text>
+                <Text style={styles.layerModeHint}>75% низ / 100% середина / 125% верх</Text>
+              </View>
+              <View style={[styles.toggle, layerMode && styles.toggleActive]}>
+                <View style={[styles.toggleThumb, layerMode && styles.toggleThumbActive]} />
+              </View>
+            </TouchableOpacity>
           </>
         )}
       </View>
@@ -375,16 +416,34 @@ export default function CalculatorScreen() {
               <ResultRow label="Причина:" value={result.reason} colors={colors} valueStyle={{ fontFamily: "Inter_700Bold" }} />
             )}
             <View style={styles.divider} />
+
             <ResultRow label="Норма:" value={`${result.doseDisplay} ${result.rule.unit}`} colors={colors} />
+
+            {/* СилКорм results */}
             {result.totalLiters !== undefined && (
               <ResultRow label="Итого препарата:" value={`${result.totalLiters} л`} colors={colors} />
             )}
+
+            {/* Layer Mode Doses */}
+            {result.layerDoses && (
+              <View style={styles.layerBox}>
+                <Text style={styles.layerBoxTitle}>Послойное внесение</Text>
+                <View style={styles.layerRow}>
+                  <LayerDoseCol label="Низ (75%)" dose={result.layerDoses.bottom} unit={result.layerDoses.unit} speed={result.input.speed} colors={colors} />
+                  <LayerDoseCol label="Середина" dose={result.layerDoses.middle} unit={result.layerDoses.unit} speed={result.input.speed} colors={colors} isMain />
+                  <LayerDoseCol label="Верх (125%)" dose={result.layerDoses.top} unit={result.layerDoses.unit} speed={result.input.speed} colors={colors} />
+                </View>
+              </View>
+            )}
+
+            {/* EGALIS results */}
             {result.totalPacks !== undefined && (
-              <ResultRow label="Пакетов (50 г):" value={`${result.totalPacks} шт.`} colors={colors} />
+              <ResultRow label={`Пакетов (${result.packLabel}):`} value={`${result.totalPacks} шт.`} colors={colors} />
             )}
             {result.solutionLiters !== undefined && (
-              <ResultRow label="Объём раствора:" value={`${result.solutionLiters} л`} colors={colors} />
+              <ResultRow label="Рабочий раствор:" value={`${result.solutionLiters} л (${result.solutionLPerT} л/т)`} colors={colors} />
             )}
+
             <ResultRow
               label="Настройка дозатора:"
               value={`${result.pumpLPH} ${result.pumpUnit}`}
@@ -408,12 +467,6 @@ export default function CalculatorScreen() {
               </View>
             )}
 
-            {result.solutionSchemeDisplay && (
-              <View style={styles.schemeBox}>
-                <Text style={styles.schemeText}>{result.solutionSchemeDisplay}</Text>
-              </View>
-            )}
-
             <TouchableOpacity
               style={[styles.saveRow, saved && { borderColor: colors.accent }]}
               onPress={handleSave}
@@ -430,7 +483,7 @@ export default function CalculatorScreen() {
           <View style={styles.shareRow}>
             <TouchableOpacity style={styles.shareBtn} onPress={handleSharePDF} activeOpacity={0.8}>
               <Feather name="file-text" size={18} color={colors.foreground} />
-              <Text style={styles.shareBtnText}>Скачать PDF</Text>
+              <Text style={styles.shareBtnText}>Поделиться</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.shareBtn, { borderColor: "#25D366" }]} onPress={handleShareWhatsApp} activeOpacity={0.8}>
               <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
@@ -442,6 +495,24 @@ export default function CalculatorScreen() {
 
       <View style={{ height: 24 }} />
     </ScrollView>
+  );
+}
+
+/* ─── Layer Dose Column ─── */
+function LayerDoseCol({ label, dose, unit, speed, colors, isMain }: {
+  label: string; dose: number; unit: string; speed: number;
+  colors: ReturnType<typeof useColors>; isMain?: boolean;
+}) {
+  const lph = dose * speed;
+  const pumpStr = lph < 1 ? `${Math.round(lph * 1000)} мл/ч` : `${Math.round(lph * 10) / 10} л/ч`;
+  return (
+    <View style={{ flex: 1, alignItems: "center" }}>
+      <Text style={{ fontSize: 10, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginBottom: 2 }}>{label}</Text>
+      <Text style={{ fontSize: 14, fontFamily: isMain ? "Inter_700Bold" : "Inter_600SemiBold", color: isMain ? colors.primary : colors.foreground }}>
+        {dose} {unit}
+      </Text>
+      <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground }}>{pumpStr}</Text>
+    </View>
   );
 }
 
@@ -553,7 +624,6 @@ function makeStyles(
     groupLabel: {
       fontSize: 20, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 10,
     },
-    /* Product mode */
     productModeRow: {
       flexDirection: "row", gap: 8, marginBottom: 4,
     },
@@ -580,7 +650,6 @@ function makeStyles(
     forcedBannerText: {
       fontSize: 12, fontFamily: "Inter_400Regular", color: colors.primary, flex: 1,
     },
-    /* Chips */
     chip: {
       flexDirection: "row", alignItems: "center",
       paddingHorizontal: 14, paddingVertical: 8,
@@ -590,7 +659,6 @@ function makeStyles(
     chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
     chipText: { fontSize: 13, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
     chipTextSelected: { color: "#FFFFFF" },
-    /* Card */
     card: {
       backgroundColor: colors.card, borderRadius: 16,
       padding: 16, marginBottom: 12,
@@ -618,7 +686,6 @@ function makeStyles(
       flex: 1, textAlign: "left",
     },
     moistureBig: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.primary },
-    /* Risk badge */
     riskBadge: {
       flexDirection: "row", alignItems: "center", gap: 6,
       borderRadius: 8, borderWidth: 1,
@@ -630,7 +697,6 @@ function makeStyles(
       fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground,
     },
     divider: { height: 1, backgroundColor: colors.border, marginVertical: 10 },
-    /* Method */
     methodRow: { flexDirection: "row", gap: 8 },
     methodCard: {
       flex: 1, alignItems: "center", justifyContent: "center",
@@ -643,13 +709,37 @@ function makeStyles(
       color: colors.mutedForeground, textAlign: "center",
     },
     methodLabelSelected: { color: colors.primary, fontFamily: "Inter_600SemiBold" },
-    /* Calc button */
+    methodSubLabel: {
+      fontSize: 10, fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground, textAlign: "center",
+    },
+    condLabel: {
+      fontSize: 13, fontFamily: "Inter_600SemiBold",
+      color: colors.foreground, marginBottom: 8,
+    },
+    layerModeRow: {
+      flexDirection: "row", alignItems: "center", gap: 12,
+    },
+    layerModeHint: {
+      fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 2,
+    },
+    toggle: {
+      width: 44, height: 26, borderRadius: 13,
+      backgroundColor: colors.border, justifyContent: "center", padding: 2,
+    },
+    toggleActive: { backgroundColor: colors.primary },
+    toggleThumb: {
+      width: 22, height: 22, borderRadius: 11,
+      backgroundColor: "#FFFFFF",
+      shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.2, shadowRadius: 1, elevation: 2,
+    },
+    toggleThumbActive: { transform: [{ translateX: 18 }] },
     calcButton: {
       height: 52, backgroundColor: colors.primary, borderRadius: 14,
       alignItems: "center", justifyContent: "center", marginBottom: 16,
     },
     calcButtonText: { fontSize: 17, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-    /* EGALIS warning */
     egalisWarningBox: {
       flexDirection: "row", alignItems: "flex-start", gap: 8,
       backgroundColor: "#FEF2F2", borderRadius: 10,
@@ -659,7 +749,6 @@ function makeStyles(
     egalisWarningText: {
       fontSize: 13, fontFamily: "Inter_500Medium", color: "#991B1B", flex: 1,
     },
-    /* Result */
     resultCard: {
       backgroundColor: colors.card, borderRadius: 16, padding: 16,
       borderWidth: 1, borderColor: colors.border, marginBottom: 12,
@@ -670,20 +759,26 @@ function makeStyles(
       paddingVertical: 4, paddingBottom: 6,
     },
     forcedTagText: { fontSize: 12, fontFamily: "Inter_500Medium", color: colors.primary },
+    layerBox: {
+      backgroundColor: colors.secondary, borderRadius: 10,
+      padding: 12, marginVertical: 6,
+    },
+    layerBoxTitle: {
+      fontSize: 12, fontFamily: "Inter_600SemiBold",
+      color: colors.primary, marginBottom: 8, textAlign: "center",
+    },
+    layerRow: { flexDirection: "row", gap: 4 },
     warningBox: {
       flexDirection: "row", alignItems: "center", gap: 6,
       backgroundColor: "#FFF7F0", borderRadius: 8, padding: 10, marginTop: 8,
     },
     warningText: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.warning, flex: 1 },
-    schemeBox: { backgroundColor: colors.secondary, borderRadius: 8, padding: 10, marginTop: 8 },
-    schemeText: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.foreground },
     saveRow: {
       flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
       marginTop: 12, paddingTop: 12,
       borderTopWidth: 1, borderTopColor: colors.border,
     },
     saveRowText: { fontSize: 13, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
-    /* Share */
     shareRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
     shareBtn: {
       flex: 1, height: 48, borderRadius: 12, borderWidth: 1.5,

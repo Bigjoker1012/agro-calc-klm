@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,28 +10,60 @@ import {
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "expo-router";
 
 import { useColors } from "@/hooks/useColors";
-import { PRODUCTS, RULES, CULTURES } from "@/constants/mockData";
+import { PRODUCTS, RULES } from "@/constants/mockData";
 import { clearHistory } from "@/utils/storage";
+import {
+  syncSheetData,
+  flushHistoryToSheets,
+  getSyncStatus,
+  type SyncStatus,
+} from "@/services/sheetsApi";
 
 export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
-  const [lastSync] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({
+    connected: false,
+    lastSync: null,
+    unsyncedCount: 0,
+    lastError: null,
+  });
 
   const styles = makeStyles(colors, isWeb, insets);
 
+  const loadStatus = useCallback(async () => {
+    const s = await getSyncStatus();
+    setSyncStatus(s);
+  }, []);
+
+  useFocusEffect(useCallback(() => { loadStatus(); }, [loadStatus]));
+
   const handleSync = async () => {
     setSyncing(true);
-    await new Promise((r) => setTimeout(r, 1500));
-    setSyncing(false);
-    Alert.alert(
-      "Синхронизация",
-      "Функция Google Sheets будет добавлена в следующем обновлении. Сейчас используются встроенные данные КЛМ."
-    );
+    try {
+      const dataOk = await syncSheetData();
+      const { sent } = await flushHistoryToSheets();
+      await loadStatus();
+      if (dataOk) {
+        Alert.alert(
+          "Синхронизация завершена",
+          sent > 0
+            ? `Справочники обновлены. Отправлено расчётов: ${sent}`
+            : "Справочники обновлены из Google Sheets"
+        );
+      } else {
+        Alert.alert("Нет связи", "Не удалось подключиться к Google Sheets. Используются локальные данные КЛМ.");
+      }
+    } catch {
+      Alert.alert("Ошибка", "Синхронизация не удалась");
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const handleClearHistory = () => {
@@ -45,11 +77,21 @@ export default function SettingsScreen() {
           style: "destructive",
           onPress: async () => {
             await clearHistory();
+            await loadStatus();
             Alert.alert("Готово", "История расчётов очищена");
           },
         },
       ]
     );
+  };
+
+  const formatLastSync = (iso: string | null): string => {
+    if (!iso) return "Нет данных";
+    const d = new Date(iso);
+    return d.toLocaleDateString("ru-RU", {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
   };
 
   return (
@@ -61,44 +103,47 @@ export default function SettingsScreen() {
       {/* Sync Section */}
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Синхронизация</Text>
+
         <View style={styles.syncRow}>
           <View>
             <Text style={styles.syncLabel}>Источник данных</Text>
-            <Text style={styles.syncValue}>Встроенная база КЛМ</Text>
+            <Text style={styles.syncValue}>Google Sheets КЛМ</Text>
           </View>
-          <View
-            style={[
-              styles.statusBadge,
-              { backgroundColor: colors.secondary },
-            ]}
-          >
-            <View
-              style={[
-                styles.statusDot,
-                { backgroundColor: colors.accent },
-              ]}
-            />
-            <Text style={[styles.statusText, { color: colors.primary }]}>
-              Активна
+          <View style={[styles.statusBadge, { backgroundColor: syncStatus.connected ? "#F0FDF4" : "#FFF7ED" }]}>
+            <View style={[styles.statusDot, { backgroundColor: syncStatus.connected ? "#16A34A" : "#D97706" }]} />
+            <Text style={[styles.statusText, { color: syncStatus.connected ? "#16A34A" : "#D97706" }]}>
+              {syncStatus.connected ? "Активна" : "Офлайн"}
             </Text>
           </View>
         </View>
-        {lastSync && (
-          <Text style={styles.lastSyncText}>
-            Последняя синхронизация: {lastSync}
-          </Text>
+
+        <View style={styles.syncInfoGrid}>
+          <View style={styles.syncInfoCell}>
+            <Text style={styles.syncInfoLabel}>Последняя синхр.</Text>
+            <Text style={styles.syncInfoValue}>{formatLastSync(syncStatus.lastSync)}</Text>
+          </View>
+          <View style={styles.syncInfoCell}>
+            <Text style={styles.syncInfoLabel}>Не отправлено</Text>
+            <Text style={[styles.syncInfoValue, syncStatus.unsyncedCount > 0 && { color: colors.warning }]}>
+              {syncStatus.unsyncedCount > 0 ? `${syncStatus.unsyncedCount} расчётов` : "Все отправлены"}
+            </Text>
+          </View>
+        </View>
+
+        {syncStatus.lastError && (
+          <View style={styles.errorBox}>
+            <Feather name="alert-circle" size={13} color="#B91C1C" />
+            <Text style={styles.errorText} numberOfLines={2}>{syncStatus.lastError}</Text>
+          </View>
         )}
+
         <TouchableOpacity
           style={[styles.syncBtn, syncing && { opacity: 0.7 }]}
           onPress={handleSync}
           disabled={syncing}
           activeOpacity={0.8}
         >
-          <Feather
-            name={syncing ? "loader" : "refresh-cw"}
-            size={16}
-            color={colors.primary}
-          />
+          <Feather name={syncing ? "loader" : "refresh-cw"} size={16} color={colors.primary} />
           <Text style={styles.syncBtnText}>
             {syncing ? "Синхронизация..." : "Синхронизировать с Google Sheets"}
           </Text>
@@ -137,17 +182,13 @@ export default function SettingsScreen() {
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Правила дозирования</Text>
         <Text style={styles.rulesNote}>
-          Изменение правил — через Google Sheets (после синхронизации)
+          Управление правилами — через Google Sheets (после синхронизации)
         </Text>
 
         <View style={styles.tableHeader}>
           <Text style={[styles.tableCell, { flex: 2, color: "#FFFFFF" }]}>Культура</Text>
-          <Text style={[styles.tableCell, { width: 80, textAlign: "center", color: "#FFFFFF" }]}>
-            Влажность
-          </Text>
-          <Text style={[styles.tableCell, { width: 80, textAlign: "right", color: "#FFFFFF" }]}>
-            Доза
-          </Text>
+          <Text style={[styles.tableCell, { width: 80, textAlign: "center", color: "#FFFFFF" }]}>Влажность</Text>
+          <Text style={[styles.tableCell, { width: 80, textAlign: "right", color: "#FFFFFF" }]}>Доза</Text>
         </View>
 
         {RULES.map((rule, i) => {
@@ -155,57 +196,29 @@ export default function SettingsScreen() {
           const isEgalis = rule.productId === "egalis";
           return (
             <View key={rule.id}>
-              <View
-                style={[
-                  styles.tableRow,
-                  i % 2 === 0 && { backgroundColor: colors.muted },
-                  isEgalis && { backgroundColor: "#F0F7FF" },
-                ]}
-              >
+              <View style={[
+                styles.tableRow,
+                i % 2 === 0 && { backgroundColor: colors.muted },
+                isEgalis && { backgroundColor: "#F0F7FF" },
+              ]}>
                 <Text style={[styles.tableCell, { flex: 2, fontSize: 12 }]}>
                   {rule.culture}
                 </Text>
-                <Text
-                  style={[
-                    styles.tableCell,
-                    { width: 80, textAlign: "center", fontSize: 12 },
-                  ]}
-                >
+                <Text style={[styles.tableCell, { width: 80, textAlign: "center", fontSize: 12 }]}>
                   {rule.moistureMin === 0 && rule.moistureMax === 100
                     ? "Любая"
                     : `${rule.moistureMin}–${rule.moistureMax}%`}
                 </Text>
-                <Text
-                  style={[
-                    styles.tableCell,
-                    { width: 80, textAlign: "right", fontSize: 12 },
-                  ]}
-                >
-                  {rule.doseMin === rule.doseMax
-                    ? `${rule.doseMin}`
-                    : `${rule.doseMin}–${rule.doseMax}`}{" "}
+                <Text style={[styles.tableCell, { width: 80, textAlign: "right", fontSize: 12 }]}>
+                  {rule.doseMin === rule.doseMax ? `${rule.doseMin}` : `${rule.doseMin}–${rule.doseMax}`}{" "}
                   {rule.unit}
                 </Text>
               </View>
-              <View
-                style={{
-                  paddingHorizontal: 8,
-                  paddingBottom: 4,
-                  backgroundColor:
-                    i % 2 === 0
-                      ? colors.muted
-                      : isEgalis
-                      ? "#F0F7FF"
-                      : "transparent",
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 10,
-                    color: isEgalis ? "#2563EB" : colors.primary,
-                    fontFamily: "Inter_500Medium",
-                  }}
-                >
+              <View style={{
+                paddingHorizontal: 8, paddingBottom: 4,
+                backgroundColor: i % 2 === 0 ? colors.muted : isEgalis ? "#F0F7FF" : "transparent",
+              }}>
+                <Text style={{ fontSize: 10, color: isEgalis ? "#2563EB" : colors.primary, fontFamily: "Inter_500Medium" }}>
                   {product?.name}
                 </Text>
               </View>
@@ -217,19 +230,13 @@ export default function SettingsScreen() {
       {/* Data Management */}
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Управление данными</Text>
-        <TouchableOpacity
-          style={styles.dangerBtn}
-          onPress={handleClearHistory}
-          activeOpacity={0.8}
-        >
+        <TouchableOpacity style={styles.dangerBtn} onPress={handleClearHistory} activeOpacity={0.8}>
           <Feather name="trash-2" size={16} color={colors.destructive} />
           <Text style={styles.dangerBtnText}>Очистить историю расчётов</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Version */}
-      <Text style={styles.versionText}>AgroCalc КЛМ • Версия 1.0.0</Text>
-
+      <Text style={styles.versionText}>AgroCalc КЛМ • Версия 1.1.0</Text>
       <View style={{ height: 24 }} />
     </ScrollView>
   );
@@ -241,162 +248,92 @@ function makeStyles(
   insets: { top: number; bottom: number }
 ) {
   return StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
+    container: { flex: 1, backgroundColor: colors.background },
     scrollContent: {
       padding: 16,
       paddingTop: isWeb ? Math.max(insets.top, 67) + 8 : 8,
       paddingBottom: isWeb ? 34 + 84 : 100,
     },
     card: {
-      backgroundColor: colors.card,
-      borderRadius: 16,
-      padding: 16,
-      marginBottom: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
+      backgroundColor: colors.card, borderRadius: 16,
+      padding: 16, marginBottom: 12,
+      borderWidth: 1, borderColor: colors.border,
     },
     sectionTitle: {
-      fontSize: 13,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.mutedForeground,
-      textTransform: "uppercase",
-      letterSpacing: 0.8,
-      marginBottom: 14,
+      fontSize: 13, fontFamily: "Inter_600SemiBold",
+      color: colors.mutedForeground, textTransform: "uppercase",
+      letterSpacing: 0.8, marginBottom: 14,
     },
-    divider: {
-      height: 1,
-      backgroundColor: colors.border,
-      marginVertical: 10,
-    },
+    divider: { height: 1, backgroundColor: colors.border, marginVertical: 10 },
     syncRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 12,
+      flexDirection: "row", justifyContent: "space-between",
+      alignItems: "center", marginBottom: 12,
     },
-    syncLabel: {
-      fontSize: 12,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-    },
-    syncValue: {
-      fontSize: 15,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.foreground,
-    },
+    syncLabel: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+    syncValue: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.foreground },
     statusBadge: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 5,
-      paddingHorizontal: 10,
-      paddingVertical: 5,
-      borderRadius: 20,
+      flexDirection: "row", alignItems: "center", gap: 5,
+      paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
     },
-    statusDot: {
-      width: 7,
-      height: 7,
-      borderRadius: 4,
+    statusDot: { width: 7, height: 7, borderRadius: 4 },
+    statusText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+    syncInfoGrid: {
+      flexDirection: "row", gap: 12, marginBottom: 12,
     },
-    statusText: {
-      fontSize: 12,
-      fontFamily: "Inter_600SemiBold",
+    syncInfoCell: {
+      flex: 1, backgroundColor: colors.muted,
+      borderRadius: 8, padding: 10,
     },
-    lastSyncText: {
-      fontSize: 12,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      marginBottom: 12,
+    syncInfoLabel: {
+      fontSize: 11, fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground, marginBottom: 3,
+    },
+    syncInfoValue: {
+      fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground,
+    },
+    errorBox: {
+      flexDirection: "row", alignItems: "center", gap: 6,
+      backgroundColor: "#FEF2F2", borderRadius: 8,
+      padding: 8, marginBottom: 10,
+    },
+    errorText: {
+      fontSize: 11, fontFamily: "Inter_400Regular", color: "#B91C1C", flex: 1,
     },
     syncBtn: {
-      height: 44,
-      borderRadius: 10,
-      borderWidth: 1.5,
+      height: 44, borderRadius: 10, borderWidth: 1.5,
       borderColor: colors.primary,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
+      flexDirection: "row", alignItems: "center",
+      justifyContent: "center", gap: 8,
     },
-    syncBtnText: {
-      fontSize: 14,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.primary,
-    },
-    productRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 12,
-      paddingVertical: 4,
-    },
+    syncBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.primary },
+    productRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 4 },
     productIcon: {
-      width: 38,
-      height: 38,
-      borderRadius: 10,
+      width: 38, height: 38, borderRadius: 10,
       backgroundColor: colors.secondary,
-      alignItems: "center",
-      justifyContent: "center",
+      alignItems: "center", justifyContent: "center",
     },
-    productName: {
-      fontSize: 15,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.foreground,
-      marginBottom: 2,
-    },
-    productDetail: {
-      fontSize: 12,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-    },
+    productName: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.foreground, marginBottom: 2 },
+    productDetail: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
     rulesNote: {
-      fontSize: 12,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      marginBottom: 12,
-      fontStyle: "italic",
+      fontSize: 12, fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground, marginBottom: 12, fontStyle: "italic",
     },
     tableHeader: {
-      flexDirection: "row",
-      paddingHorizontal: 8,
-      paddingVertical: 8,
-      backgroundColor: colors.primary,
-      borderRadius: 8,
-      marginBottom: 2,
+      flexDirection: "row", paddingHorizontal: 8, paddingVertical: 8,
+      backgroundColor: colors.primary, borderRadius: 8, marginBottom: 2,
     },
-    tableRow: {
-      flexDirection: "row",
-      paddingHorizontal: 8,
-      paddingTop: 6,
-      borderRadius: 0,
-    },
-    tableCell: {
-      fontSize: 13,
-      fontFamily: "Inter_500Medium",
-      color: colors.foreground,
-    },
+    tableRow: { flexDirection: "row", paddingHorizontal: 8, paddingTop: 6 },
+    tableCell: { fontSize: 13, fontFamily: "Inter_500Medium", color: colors.foreground },
     dangerBtn: {
-      height: 44,
-      borderRadius: 10,
-      borderWidth: 1.5,
+      height: 44, borderRadius: 10, borderWidth: 1.5,
       borderColor: colors.destructive,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
+      flexDirection: "row", alignItems: "center",
+      justifyContent: "center", gap: 8,
     },
-    dangerBtnText: {
-      fontSize: 14,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.destructive,
-    },
+    dangerBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.destructive },
     versionText: {
-      textAlign: "center",
-      fontSize: 12,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      marginBottom: 4,
+      textAlign: "center", fontSize: 12,
+      fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginBottom: 4,
     },
   });
 }
