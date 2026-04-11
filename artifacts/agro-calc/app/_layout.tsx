@@ -9,12 +9,22 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
+import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 SplashScreen.preventAutoHideAsync();
+
+if (Platform.OS === "web" && typeof document !== "undefined") {
+  const style = document.createElement("style");
+  style.textContent = [
+    "html, body { overflow-x: hidden !important; max-width: 100vw !important; position: relative; }",
+    "input, textarea, select { font-size: 16px !important; }",
+  ].join("\n");
+  document.head.appendChild(style);
+}
 
 const queryClient = new QueryClient();
 
