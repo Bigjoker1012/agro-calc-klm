@@ -251,6 +251,14 @@ export default function CalculatorScreen() {
               placeholder="0"
               placeholderTextColor={colors.mutedForeground}
               keyboardType="decimal-pad"
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={() => {
+                lockScrollX();
+                if (isWeb && typeof document !== "undefined") {
+                  (document.activeElement as HTMLElement)?.blur();
+                }
+              }}
             />
           </View>
         </View>
@@ -296,6 +304,10 @@ export default function CalculatorScreen() {
               placeholder="0"
               placeholderTextColor={colors.mutedForeground}
               keyboardType="decimal-pad"
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={() => { lockScrollX(); }}
+              {...(isWeb ? ({ tabIndex: -1 } as any) : {})}
             />
           </View>
         </View>
