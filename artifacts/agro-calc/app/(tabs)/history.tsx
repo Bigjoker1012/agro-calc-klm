@@ -5,7 +5,6 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   Platform,
   ActivityIndicator,
 } from "react-native";
@@ -32,21 +31,15 @@ interface LocalEntry {
   method?: string;
 }
 
-
 export default function HistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const [entries, setEntries] = useState<LocalEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const justClearedRef = React.useRef(false);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const fetchHistory = useCallback(async () => {
-    // Skip reload if we just cleared — avoids dialog-close focus event overwriting cleared state
-    if (justClearedRef.current) {
-      justClearedRef.current = false;
-      return;
-    }
     setLoading(true);
     try {
       const local = await loadHistory();
@@ -72,33 +65,15 @@ export default function HistoryScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setConfirmClear(false);
       fetchHistory();
     }, [fetchHistory])
   );
 
-  const handleClear = () => {
-    Alert.alert(
-      "Очистить историю",
-      "Все сохранённые расчёты будут удалены с этого устройства. Продолжить?",
-      [
-        { text: "Отмена", style: "cancel" },
-        {
-          text: "Удалить",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              // Set flag BEFORE clearing so the focus-event reload (web) is skipped
-              justClearedRef.current = true;
-              await clearHistory();
-              setEntries([]);
-            } catch {
-              justClearedRef.current = false;
-              Alert.alert("Ошибка", "Не удалось очистить историю");
-            }
-          },
-        },
-      ]
-    );
+  const doClear = async () => {
+    await clearHistory();
+    setEntries([]);
+    setConfirmClear(false);
   };
 
   const styles = makeStyles(colors, isWeb, insets);
@@ -133,10 +108,22 @@ export default function HistoryScreen() {
         ListHeaderComponent={
           <View style={styles.listHeader}>
             <Text style={styles.countText}>{entries.length} расчётов</Text>
-            <TouchableOpacity style={styles.clearBtn} onPress={handleClear} activeOpacity={0.7}>
-              <Feather name="trash-2" size={13} color={colors.destructive} />
-              <Text style={styles.clearText}>Очистить</Text>
-            </TouchableOpacity>
+            {confirmClear ? (
+              <View style={styles.confirmRow}>
+                <Text style={styles.confirmText}>Удалить всё?</Text>
+                <TouchableOpacity style={styles.confirmYes} onPress={doClear} activeOpacity={0.7}>
+                  <Text style={styles.confirmYesText}>Да</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.confirmNo} onPress={() => setConfirmClear(false)} activeOpacity={0.7}>
+                  <Text style={styles.confirmNoText}>Нет</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.clearBtn} onPress={() => setConfirmClear(true)} activeOpacity={0.7}>
+                <Feather name="trash-2" size={13} color={colors.destructive} />
+                <Text style={styles.clearText}>Очистить</Text>
+              </TouchableOpacity>
+            )}
           </View>
         }
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
@@ -295,6 +282,39 @@ function makeStyles(
       borderColor: colors.destructive,
     },
     clearText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.destructive },
+    confirmRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    confirmText: {
+      fontSize: 13,
+      fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground,
+    },
+    confirmYes: {
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      borderRadius: 7,
+      backgroundColor: colors.destructive,
+    },
+    confirmYesText: {
+      fontSize: 13,
+      fontFamily: "Inter_600SemiBold",
+      color: "#fff",
+    },
+    confirmNo: {
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      borderRadius: 7,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    confirmNoText: {
+      fontSize: 13,
+      fontFamily: "Inter_500Medium",
+      color: colors.mutedForeground,
+    },
     centerContainer: {
       flex: 1,
       backgroundColor: colors.background,
