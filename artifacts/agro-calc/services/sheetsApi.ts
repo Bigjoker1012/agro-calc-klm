@@ -63,6 +63,35 @@ export async function queueHistoryRecord(result: CalculationResult): Promise<voi
   } catch {}
 }
 
+export interface ServerHistoryRecord {
+  dateTime: string;
+  productCode: string;
+  cultureCode: string;
+  mass: number;
+  moisture: number;
+  method: string;
+  dose: number;
+  doseUnit: string;
+  totalProduct: number;
+  totalWater?: number;
+  pumpLPH?: number;
+  pumpLPM?: number;
+  totalPrice?: number;
+  comment?: string;
+}
+
+export async function fetchServerHistory(limit = 100): Promise<ServerHistoryRecord[]> {
+  try {
+    const res = await fetch(`${getApiBase()}/sheets/history?limit=${limit}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.ok && Array.isArray(json.records)) return json.records as ServerHistoryRecord[];
+    throw new Error(json.error ?? "Unknown error");
+  } catch {
+    return [];
+  }
+}
+
 export async function flushHistoryToSheets(): Promise<{ sent: number; failed: number }> {
   let sent = 0;
   let failed = 0;
