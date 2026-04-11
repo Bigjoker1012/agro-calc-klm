@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Platform,
-  Alert,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,6 +26,9 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [cleared, setCleared] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     connected: false,
     lastSync: null,
@@ -41,48 +43,42 @@ export default function SettingsScreen() {
     setSyncStatus(s);
   }, []);
 
-  useFocusEffect(useCallback(() => { loadStatus(); }, [loadStatus]));
+  useFocusEffect(useCallback(() => {
+    setConfirmClear(false);
+    setCleared(false);
+    setSyncMessage(null);
+    loadStatus();
+  }, [loadStatus]));
 
   const handleSync = async () => {
     setSyncing(true);
+    setSyncMessage(null);
     try {
       const dataOk = await syncSheetData();
       const { sent } = await flushHistoryToSheets();
       await loadStatus();
       if (dataOk) {
-        Alert.alert(
-          "Синхронизация завершена",
-          sent > 0
+        setSyncMessage({
+          ok: true,
+          text: sent > 0
             ? `Справочники обновлены. Отправлено расчётов: ${sent}`
-            : "Справочники обновлены из Google Sheets"
-        );
+            : "Справочники обновлены из Google Sheets",
+        });
       } else {
-        Alert.alert("Нет связи", "Не удалось подключиться к Google Sheets. Используются локальные данные КЛМ.");
+        setSyncMessage({ ok: false, text: "Нет связи с Google Sheets. Используются локальные данные КЛМ." });
       }
     } catch {
-      Alert.alert("Ошибка", "Синхронизация не удалась");
+      setSyncMessage({ ok: false, text: "Синхронизация не удалась" });
     } finally {
       setSyncing(false);
     }
   };
 
-  const handleClearHistory = () => {
-    Alert.alert(
-      "Очистить историю",
-      "Все сохранённые расчёты будут удалены. Продолжить?",
-      [
-        { text: "Отмена", style: "cancel" },
-        {
-          text: "Удалить",
-          style: "destructive",
-          onPress: async () => {
-            await clearHistory();
-            await loadStatus();
-            Alert.alert("Готово", "История расчётов очищена");
-          },
-        },
-      ]
-    );
+  const doClearHistory = async () => {
+    await clearHistory();
+    await loadStatus();
+    setConfirmClear(false);
+    setCleared(true);
   };
 
   const formatLastSync = (iso: string | null): string => {
@@ -134,6 +130,13 @@ export default function SettingsScreen() {
           <View style={styles.errorBox}>
             <Feather name="alert-circle" size={13} color="#B91C1C" />
             <Text style={styles.errorText} numberOfLines={2}>{syncStatus.lastError}</Text>
+          </View>
+        )}
+
+        {syncMessage && (
+          <View style={[styles.msgBox, { backgroundColor: syncMessage.ok ? "#F0FDF4" : "#FFF7ED" }]}>
+            <Feather name={syncMessage.ok ? "check-circle" : "alert-circle"} size={13} color={syncMessage.ok ? "#16A34A" : "#D97706"} />
+            <Text style={[styles.msgText, { color: syncMessage.ok ? "#16A34A" : "#92400E" }]}>{syncMessage.text}</Text>
           </View>
         )}
 
@@ -230,10 +233,30 @@ export default function SettingsScreen() {
       {/* Data Management */}
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Управление данными</Text>
-        <TouchableOpacity style={styles.dangerBtn} onPress={handleClearHistory} activeOpacity={0.8}>
-          <Feather name="trash-2" size={16} color={colors.destructive} />
-          <Text style={styles.dangerBtnText}>Очистить историю расчётов</Text>
-        </TouchableOpacity>
+        {cleared ? (
+          <View style={styles.msgBox}>
+            <Feather name="check-circle" size={13} color="#16A34A" />
+            <Text style={[styles.msgText, { color: "#16A34A" }]}>История очищена</Text>
+          </View>
+        ) : confirmClear ? (
+          <View>
+            <Text style={styles.confirmLabel}>Удалить всю историю на этом устройстве?</Text>
+            <View style={styles.confirmBtns}>
+              <TouchableOpacity style={styles.confirmYes} onPress={doClearHistory} activeOpacity={0.8}>
+                <Feather name="trash-2" size={14} color="#fff" />
+                <Text style={styles.confirmYesText}>Удалить</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmNo} onPress={() => setConfirmClear(false)} activeOpacity={0.8}>
+                <Text style={styles.confirmNoText}>Отмена</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity style={styles.dangerBtn} onPress={() => setConfirmClear(true)} activeOpacity={0.8}>
+            <Feather name="trash-2" size={16} color={colors.destructive} />
+            <Text style={styles.dangerBtnText}>Очистить историю расчётов</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <Text style={styles.versionText}>AgroCalc КЛМ • Версия 1.1.0</Text>
@@ -277,28 +300,22 @@ function makeStyles(
     },
     statusDot: { width: 7, height: 7, borderRadius: 4 },
     statusText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-    syncInfoGrid: {
-      flexDirection: "row", gap: 12, marginBottom: 12,
-    },
-    syncInfoCell: {
-      flex: 1, backgroundColor: colors.muted,
-      borderRadius: 8, padding: 10,
-    },
-    syncInfoLabel: {
-      fontSize: 11, fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground, marginBottom: 3,
-    },
-    syncInfoValue: {
-      fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground,
-    },
+    syncInfoGrid: { flexDirection: "row", gap: 12, marginBottom: 12 },
+    syncInfoCell: { flex: 1, backgroundColor: colors.muted, borderRadius: 8, padding: 10 },
+    syncInfoLabel: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginBottom: 3 },
+    syncInfoValue: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground },
     errorBox: {
       flexDirection: "row", alignItems: "center", gap: 6,
       backgroundColor: "#FEF2F2", borderRadius: 8,
       padding: 8, marginBottom: 10,
     },
-    errorText: {
-      fontSize: 11, fontFamily: "Inter_400Regular", color: "#B91C1C", flex: 1,
+    errorText: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#B91C1C", flex: 1 },
+    msgBox: {
+      flexDirection: "row", alignItems: "center", gap: 6,
+      backgroundColor: "#F0FDF4", borderRadius: 8,
+      padding: 10, marginBottom: 10,
     },
+    msgText: { fontSize: 12, fontFamily: "Inter_500Medium", flex: 1 },
     syncBtn: {
       height: 44, borderRadius: 10, borderWidth: 1.5,
       borderColor: colors.primary,
@@ -331,6 +348,24 @@ function makeStyles(
       justifyContent: "center", gap: 8,
     },
     dangerBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.destructive },
+    confirmLabel: {
+      fontSize: 14, fontFamily: "Inter_500Medium",
+      color: colors.foreground, marginBottom: 12,
+    },
+    confirmBtns: { flexDirection: "row", gap: 10 },
+    confirmYes: {
+      flex: 1, height: 42, borderRadius: 10,
+      backgroundColor: colors.destructive,
+      flexDirection: "row", alignItems: "center",
+      justifyContent: "center", gap: 6,
+    },
+    confirmYesText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#fff" },
+    confirmNo: {
+      flex: 1, height: 42, borderRadius: 10,
+      borderWidth: 1.5, borderColor: colors.border,
+      alignItems: "center", justifyContent: "center",
+    },
+    confirmNoText: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
     versionText: {
       textAlign: "center", fontSize: 12,
       fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginBottom: 4,
