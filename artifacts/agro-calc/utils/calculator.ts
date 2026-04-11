@@ -55,9 +55,9 @@ export function getMoistureRisk(moisture: number): MoistureRisk {
   }
   if (moisture <= 55) {
     return {
-      color: "#1E40AF",
-      bgColor: "#EFF6FF",
-      borderColor: "#93C5FD",
+      color: "#166534",
+      bgColor: "#F0FDF4",
+      borderColor: "#86EFAC",
       icon: "check-circle",
       text: "Оптимальный диапазон влажности",
       level: "optimal",
@@ -65,10 +65,10 @@ export function getMoistureRisk(moisture: number): MoistureRisk {
   }
   if (moisture <= 75) {
     return {
-      color: "#9A3412",
-      bgColor: "#FFF7ED",
-      borderColor: "#FDBA74",
-      icon: "alert-triangle",
+      color: "#1E40AF",
+      bgColor: "#EFF6FF",
+      borderColor: "#93C5FD",
+      icon: "info",
       text: "Высокая влажность — возможны потери сока",
       level: "warn-high",
     };
