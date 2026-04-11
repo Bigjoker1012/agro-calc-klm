@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
 import type { CalculationResult } from "@/utils/calculator";
 
 const CACHE_KEY = "sheets_data_cache_v1";
@@ -6,6 +7,10 @@ const SYNC_STATUS_KEY = "sheets_sync_status_v1";
 const UNSYNCED_KEY = "sheets_unsynced_v1";
 
 function getApiBase(): string {
+  // On web: use the same origin the app was loaded from (works with any domain)
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    return `${window.location.origin}/api`;
+  }
   const domain = process.env.EXPO_PUBLIC_DOMAIN;
   if (domain) return `https://${domain}/api`;
   return "http://localhost:8080/api";
