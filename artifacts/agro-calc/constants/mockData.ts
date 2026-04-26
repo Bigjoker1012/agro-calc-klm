@@ -27,7 +27,6 @@ export interface Rule {
 export interface EgalisPackage {
   code: string;
   massG: number;
-  tonsPerPack: number;
   waterFromL: number;
   waterToL: number;
 }
@@ -52,8 +51,8 @@ export const PRODUCTS: Product[] = [
 ];
 
 export const EGALIS_PACKAGES: EgalisPackage[] = [
-  { code: "EGALIS_50G", massG: 50, tonsPerPack: 25, waterFromL: 50, waterToL: 200 },
-  { code: "EGALIS_200G", massG: 200, tonsPerPack: 100, waterFromL: 50, waterToL: 200 },
+  { code: "EGALIS_50G",  massG: 50,  waterFromL: 50,  waterToL: 200 },
+  { code: "EGALIS_200G", massG: 200, waterFromL: 50,  waterToL: 200 },
 ];
 
 export const CULTURES = [
@@ -64,19 +63,26 @@ export const CULTURES = [
   "Злаково-клеверная смесь",
   "Люцерна",
   "Бобовые культуры",
+  "Сорго",
+  "Цельные растения / wholecrop",
+  "Смешанная масса",
 ];
 
 export const CULTURE_CODES: Record<string, string> = {
-  "Злаковые травы": "CEREAL_GRASS",
-  "Бобовые / Однолетние": "LEGUME_ANNUAL",
-  "Кукуруза (силос)": "CORN_SILAGE",
-  "Плющеное зерно": "ROLLED_GRAIN",
-  "Злаково-клеверная смесь": "GRASS_CLOVER",
-  "Люцерна": "LUCERNE",
-  "Бобовые культуры": "LEGUMES",
+  "Злаковые травы":              "CEREAL_GRASS",
+  "Бобовые / Однолетние":        "LEGUME_ANNUAL",
+  "Кукуруза (силос)":            "CORN_SILAGE",
+  "Плющеное зерно":              "ROLLED_GRAIN",
+  "Злаково-клеверная смесь":     "GRASS_CLOVER",
+  "Люцерна":                     "LUCERNE",
+  "Бобовые культуры":            "LEGUMES",
+  "Сорго":                       "SORGHUM",
+  "Цельные растения / wholecrop":"WHOLECROP",
+  "Смешанная масса":             "MIXED_FORAGE",
 };
 
 export const RULES: Rule[] = [
+  // ── СилКорм Про ────────────────────────────────────────────────
   {
     id: "r1",
     productCode: "SILKORM_PRO",
@@ -143,6 +149,8 @@ export const RULES: Rule[] = [
     layerMode: false, priority: 15,
     recommendation: "Плющеное зерно 25–30 %",
   },
+
+  // ── EGALIS Ferment ─────────────────────────────────────────────
   {
     id: "r7",
     productCode: "EGALIS_FERMENT",
@@ -150,9 +158,9 @@ export const RULES: Rule[] = [
     culture: "Злаковые травы",
     moistureMin: 0, moistureMax: 100,
     productId: "egalis",
-    doseMin: 2, doseMax: 2, unit: "г/т",
+    doseMin: 1, doseMax: 1, unit: "г/т",
     layerMode: false, priority: 30,
-    recommendation: "Злаковые травы; базовая норма 2 г/т",
+    recommendation: "Злаковые травы; 1 г/т",
   },
   {
     id: "r8",
@@ -163,7 +171,7 @@ export const RULES: Rule[] = [
     productId: "egalis",
     doseMin: 2, doseMax: 2, unit: "г/т",
     layerMode: false, priority: 30,
-    recommendation: "Злаково-клеверная смесь; базовая норма 2 г/т",
+    recommendation: "Злаково-клеверная смесь; 2 г/т",
   },
   {
     id: "r9",
@@ -174,7 +182,7 @@ export const RULES: Rule[] = [
     productId: "egalis",
     doseMin: 2, doseMax: 2, unit: "г/т",
     layerMode: false, priority: 30,
-    recommendation: "Люцерна; базовая норма 2 г/т",
+    recommendation: "Люцерна; 2 г/т",
   },
   {
     id: "r10",
@@ -185,16 +193,63 @@ export const RULES: Rule[] = [
     productId: "egalis",
     doseMin: 2, doseMax: 2, unit: "г/т",
     layerMode: false, priority: 30,
-    recommendation: "Бобовые культуры; базовая норма 2 г/т",
+    recommendation: "Бобовые культуры; 2 г/т",
+  },
+  {
+    id: "r11",
+    productCode: "EGALIS_FERMENT",
+    cultureCode: "CORN_SILAGE",
+    culture: "Кукуруза (силос)",
+    moistureMin: 0, moistureMax: 100,
+    productId: "egalis",
+    doseMin: 0.5, doseMax: 0.5, unit: "г/т",
+    layerMode: false, priority: 15,
+    recommendation: "Кукуруза; 0,5 г/т",
+  },
+  {
+    id: "r12",
+    productCode: "EGALIS_FERMENT",
+    cultureCode: "SORGHUM",
+    culture: "Сорго",
+    moistureMin: 0, moistureMax: 100,
+    productId: "egalis",
+    doseMin: 0.5, doseMax: 0.5, unit: "г/т",
+    layerMode: false, priority: 25,
+    recommendation: "Сорго; 0,5 г/т",
+  },
+  {
+    id: "r13",
+    productCode: "EGALIS_FERMENT",
+    cultureCode: "WHOLECROP",
+    culture: "Цельные растения / wholecrop",
+    moistureMin: 0, moistureMax: 100,
+    productId: "egalis",
+    doseMin: 1, doseMax: 1, unit: "г/т",
+    layerMode: false, priority: 25,
+    recommendation: "Wholecrop; 1 г/т",
+  },
+  {
+    id: "r14",
+    productCode: "EGALIS_FERMENT",
+    cultureCode: "MIXED_FORAGE",
+    culture: "Смешанная масса",
+    moistureMin: 0, moistureMax: 100,
+    productId: "egalis",
+    doseMin: 1, doseMax: 1, unit: "г/т",
+    layerMode: false, priority: 20,
+    recommendation: "Смешанная масса; 1 г/т",
   },
 ];
 
 export const CULTURE_MOISTURE_HINTS: Record<string, string> = {
-  "Злаковые травы": "Любая влажность",
-  "Бобовые / Однолетние": "Любая влажность",
-  "Кукуруза (силос)": "Любая влажность",
-  "Плющеное зерно": "Диапазон для расчёта: 25–45%",
-  "Злаково-клеверная смесь": "Любая влажность",
-  "Люцерна": "Любая влажность",
-  "Бобовые культуры": "Любая влажность",
+  "Злаковые травы":              "Любая влажность",
+  "Бобовые / Однолетние":        "Любая влажность",
+  "Кукуруза (силос)":            "Любая влажность",
+  "Плющеное зерно":              "Диапазон для расчёта: 25–45%",
+  "Злаково-клеверная смесь":     "Любая влажность",
+  "Люцерна":                     "Любая влажность",
+  "Бобовые культуры":            "Любая влажность",
+  "Сорго":                       "Любая влажность",
+  "Цельные растения / wholecrop":"Любая влажность",
+  "Смешанная масса":             "Любая влажность",
 };

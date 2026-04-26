@@ -94,6 +94,15 @@ export function getMoistureRisk(moisture: number): MoistureRisk {
   };
 }
 
+export function getEgalisDoseForCulture(culture: string): number {
+  const rule = RULES.find((r) => r.culture === culture && r.productId === "egalis");
+  return rule?.doseMin ?? EGALIS_DEFAULT_DOSE_G;
+}
+
+export function egalisPackTons(packMassG: number, doseGPerT: number): number {
+  return packMassG / doseGPerT;
+}
+
 export function findRule(culture: string, moisture: number): Rule | null {
   const matches = RULES.filter(
     (r) =>
@@ -127,7 +136,7 @@ function buildReason(rule: Rule, moisture: number): string {
 }
 
 const SILKORM_FALLBACK_DOSE = 3;
-const EGALIS_DEFAULT_DOSE_G = 2;
+export const EGALIS_DEFAULT_DOSE_G = 2;
 
 export function calculate(input: CalculationInput): CalculationResult | null {
   const naturalRule = findRule(input.culture, input.moisture);
@@ -260,7 +269,8 @@ export function calculate(input: CalculationInput): CalculationResult | null {
     const doseGPerT = rule.doseMin;
     totalKg = round((doseGPerT / 1000) * input.mass, 4);
     totalCost = round(totalKg * product.price, 2);
-    totalPacks = Math.ceil(input.mass / pack.tonsPerPack);
+    const tonsPerPack = pack.massG / doseGPerT;
+    totalPacks = Math.ceil(input.mass / tonsPerPack);
     packLabel = `${pack.massG} г`;
     solutionLiters = round(totalPacks * input.egalisWaterPerPack, 0);
     solutionLPerT = round(solutionLiters / input.mass, 2);
