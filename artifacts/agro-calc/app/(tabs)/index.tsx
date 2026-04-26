@@ -24,6 +24,8 @@ import {
   getMoistureRisk,
   formatCurrency,
   buildShareText,
+  getEgalisDoseForCulture,
+  egalisPackTons,
   type CalculationResult,
   type ProductMode,
 } from "@/utils/calculator";
@@ -70,6 +72,11 @@ export default function CalculatorScreen() {
   const showEgalisFields = productMode === "egalis" || (productMode === "auto" && result?.product.id === "egalis");
   const showLayerMode = (productMode === "silkorm" || (productMode === "auto" && result?.product.id === "silkorm")) && result?.rule?.layerMode;
   const canLayerMode = productMode === "silkorm" || (productMode === "auto" && !!(culture && findRule(culture, moisture)?.layerMode));
+
+  const egalisCurrentDose = culture ? getEgalisDoseForCulture(culture) : 2;
+  const showEgalisPackSelector =
+    productMode === "egalis" ||
+    (productMode === "auto" && !!culture && !!findRule(culture, moisture) && findRule(culture, moisture)?.productId === "egalis");
 
   const reset = () => { setResult(null); setSaved(false); };
 
@@ -340,27 +347,30 @@ export default function CalculatorScreen() {
         </View>
 
         {/* EGALIS Pack & Water Selectors */}
-        {(productMode === "egalis") && (
+        {showEgalisPackSelector && (
           <>
             <View style={styles.divider} />
             <Text style={styles.condLabel}>Вариант пакета EGALIS</Text>
             <View style={styles.methodRow}>
-              {([50, 200] as const).map((size) => (
-                <TouchableOpacity
-                  key={size}
-                  style={[styles.methodCard, egalisPackSize === size && styles.methodCardSelected, { flex: 1 }]}
-                  onPress={() => { setEgalisPackSize(size); reset(); }}
-                  activeOpacity={0.75}
-                >
-                  <Feather name="package" size={20} color={egalisPackSize === size ? colors.primary : colors.mutedForeground} />
-                  <Text style={[styles.methodLabel, egalisPackSize === size && styles.methodLabelSelected]}>
-                    {size} г
-                  </Text>
-                  <Text style={styles.methodSubLabel}>
-                    {size === 50 ? "на 25 т" : "на 100 т"}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {([50, 200] as const).map((size) => {
+                const tons = egalisPackTons(size, egalisCurrentDose);
+                return (
+                  <TouchableOpacity
+                    key={size}
+                    style={[styles.methodCard, egalisPackSize === size && styles.methodCardSelected, { flex: 1 }]}
+                    onPress={() => { setEgalisPackSize(size); reset(); }}
+                    activeOpacity={0.75}
+                  >
+                    <Feather name="package" size={20} color={egalisPackSize === size ? colors.primary : colors.mutedForeground} />
+                    <Text style={[styles.methodLabel, egalisPackSize === size && styles.methodLabelSelected]}>
+                      {size} г
+                    </Text>
+                    <Text style={styles.methodSubLabel}>
+                      {`на ${tons % 1 === 0 ? tons : tons.toFixed(0)} т`}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             <View style={[styles.divider, { marginTop: 12 }]} />
