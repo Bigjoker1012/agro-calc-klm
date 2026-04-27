@@ -1,11 +1,42 @@
 import { google } from "googleapis";
+import { readFileSync } from "fs";
+import { resolve } from "path";
 
 const SHEET_ID = "1PfQfQXCxs31qS3B1sGRwS0VwkE3PGLEbVOvXVbdGFiI";
 
 function getAuth() {
-  const json = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (!json) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON не задан");
-  const credentials = JSON.parse(json);
+  let credentials: object | undefined;
+
+  // 1. Try environment variable
+  const envJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (envJson) {
+    try {
+      credentials = JSON.parse(envJson);
+    } catch {
+      // invalid JSON in env var — fall through to file
+    }
+  }
+
+  // 2. Fallback: read key file from project root (Replit dev environment)
+  if (!credentials) {
+    try {
+      const filePath = resolve(
+        process.cwd(),
+        "../../attached_assets/agro-calc-klm-851be2dde7cc_1777293560241.json"
+      );
+      credentials = JSON.parse(readFileSync(filePath, "utf-8"));
+    } catch {
+      // file not found or invalid
+    }
+  }
+
+  if (!credentials) {
+    throw new Error(
+      "Google service account credentials не найдены. " +
+      "Установите секрет GOOGLE_SERVICE_ACCOUNT_JSON."
+    );
+  }
+
   return new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
@@ -43,11 +74,11 @@ export async function getSheetData() {
   });
   const valueRanges = res.data.valueRanges ?? [];
   return {
-    products: parseSheet(valueRanges[0]?.values as string[][] | undefined),
-    cultures: parseSheet(valueRanges[1]?.values as string[][] | undefined),
-    rules: parseSheet(valueRanges[2]?.values as string[][] | undefined),
-    egalisPackages: parseSheet(valueRanges[3]?.values as string[][] | undefined),
-    prices: parseSheet(valueRanges[4]?.values as string[][] | undefined),
+    products:      parseSheet(valueRanges[0]?.values as string[][] | undefined),
+    cultures:      parseSheet(valueRanges[1]?.values as string[][] | undefined),
+    rules:         parseSheet(valueRanges[2]?.values as string[][] | undefined),
+    egalisPackages:parseSheet(valueRanges[3]?.values as string[][] | undefined),
+    prices:        parseSheet(valueRanges[4]?.values as string[][] | undefined),
   };
 }
 
