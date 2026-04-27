@@ -1,22 +1,19 @@
-import { ReplitConnectors } from "@replit/connectors-sdk";
+import { google } from "googleapis";
 
 const SHEET_ID = "1PfQfQXCxs31qS3B1sGRwS0VwkE3PGLEbVOvXVbdGFiI";
 
-function getConnectors() {
-  return new ReplitConnectors();
+function getAuth() {
+  const json = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (!json) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON не задан");
+  const credentials = JSON.parse(json);
+  return new google.auth.GoogleAuth({
+    credentials,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
 }
 
-async function batchGetRanges(ranges: string[]) {
-  const connectors = getConnectors();
-  const encoded = ranges.map((r) => "ranges=" + encodeURIComponent(r)).join("&");
-  const res = await connectors.proxy(
-    "google-sheet",
-    `/v4/spreadsheets/${SHEET_ID}/values:batchGet?${encoded}`,
-    { method: "GET" }
-  );
-  const data = await res.json();
-  if (data.error) throw new Error(data.error.message);
-  return data.valueRanges as { range: string; values?: string[][] }[];
+function getSheets() {
+  return google.sheets({ version: "v4", auth: getAuth() });
 }
 
 function parseSheet(values: string[][] | undefined) {
@@ -32,20 +29,25 @@ function parseSheet(values: string[][] | undefined) {
 }
 
 export async function getSheetData() {
-  const sheets = [
+  const sheets = getSheets();
+  const ranges = [
     "Продукты!A1:Z100",
     "Культуры_и_сырье!A1:Z100",
     "Правила_дозирования!A1:Z100",
     "Пакеты_EGALIS!A1:Z100",
     "Цены!A1:Z100",
   ];
-  const ranges = await batchGetRanges(sheets);
+  const res = await sheets.spreadsheets.values.batchGet({
+    spreadsheetId: SHEET_ID,
+    ranges,
+  });
+  const valueRanges = res.data.valueRanges ?? [];
   return {
-    products: parseSheet(ranges[0]?.values),
-    cultures: parseSheet(ranges[1]?.values),
-    rules: parseSheet(ranges[2]?.values),
-    egalisPackages: parseSheet(ranges[3]?.values),
-    prices: parseSheet(ranges[4]?.values),
+    products: parseSheet(valueRanges[0]?.values as string[][] | undefined),
+    cultures: parseSheet(valueRanges[1]?.values as string[][] | undefined),
+    rules: parseSheet(valueRanges[2]?.values as string[][] | undefined),
+    egalisPackages: parseSheet(valueRanges[3]?.values as string[][] | undefined),
+    prices: parseSheet(valueRanges[4]?.values as string[][] | undefined),
   };
 }
 
@@ -69,17 +71,13 @@ export interface HistoryRecord {
 }
 
 export async function getHistory(limit = 100): Promise<HistoryRecord[]> {
-  const connectors = getConnectors();
-  const res = await connectors.proxy(
-    "google-sheet",
-    `/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent("История_шаблон!A:Q")}`,
-    { method: "GET" }
-  );
-  const data = await res.json();
-  if (data.error) throw new Error(data.error.message);
-  const values = data.values as string[][] | undefined;
+  const sheets = getSheets();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "История_шаблон!A:Q",
+  });
+  const values = res.data.values as string[][] | undefined;
   if (!values || values.length < 2) return [];
-  // Skip header row, take last `limit` data rows, newest first
   const rows = values.slice(1).filter((r) => r.some((c) => c?.trim()));
   return rows
     .slice(-limit)
@@ -105,7 +103,7 @@ export async function getHistory(limit = 100): Promise<HistoryRecord[]> {
 }
 
 export async function appendHistory(record: HistoryRecord) {
-  const connectors = getConnectors();
+  const sheets = getSheets();
   const row = [
     record.dateTime,
     record.user ?? "",
@@ -125,17 +123,11 @@ export async function appendHistory(record: HistoryRecord) {
     record.comment ?? "",
     "синхронизировано",
   ];
-
-  const res = await connectors.proxy(
-    "google-sheet",
-    `/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent("История_шаблон!A:Q")}:append?valueInputOption=USER_ENTERED`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ values: [row] }),
-    }
-  );
-  const data = await res.json();
-  if (data.error) throw new Error(data.error.message);
-  return data;
+  const res = await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: "История_шаблон!A:Q",
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [row] },
+  });
+  return res.data;
 }
