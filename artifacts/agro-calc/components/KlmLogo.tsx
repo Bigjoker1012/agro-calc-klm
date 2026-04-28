@@ -10,11 +10,11 @@ const GRAY   = "#4D4D4D";
 
 export function KlmLogo({ height = 38 }: KlmLogoProps) {
   const scale = height / 38;
-  const W = Math.round(116 * scale);
+  const W = Math.round(82 * scale);
   const H = height;
 
   return (
-    <Svg width={W} height={H} viewBox="0 0 116 38">
+    <Svg width={W} height={H} viewBox="0 0 82 38">
       {/* ── Wheat ear icon ── */}
       <G>
         {/* stem */}
@@ -35,30 +35,14 @@ export function KlmLogo({ height = 38 }: KlmLogoProps) {
       {/* ── КЛМ text ── */}
       <Text
         x="24"
-        y="21"
+        y="26"
         fontFamily="Inter_700Bold, Arial, sans-serif"
         fontWeight="700"
-        fontSize="18"
+        fontSize="22"
         fill={ORANGE}
-        letterSpacing="0.5"
+        letterSpacing="1"
       >
         КЛМ
-      </Text>
-
-      {/* ── divider line ── */}
-      <Line x1="24" y1="24" x2="112" y2="24" stroke={GRAY} strokeWidth="0.8" opacity="0.5" />
-
-      {/* ── subtitle ── */}
-      <Text
-        x="24"
-        y="34"
-        fontFamily="Inter_500Medium, Arial, sans-serif"
-        fontWeight="500"
-        fontSize="9"
-        fill={GRAY}
-        letterSpacing="1.5"
-      >
-        АГРОСЕРВИС
       </Text>
     </Svg>
   );
