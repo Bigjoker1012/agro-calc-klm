@@ -29,6 +29,7 @@ import {
   type CalculationResult,
   type ProductMode,
 } from "@/utils/calculator";
+
 import { saveCalculation } from "@/utils/storage";
 import { queueHistoryRecord, flushHistoryToSheets } from "@/services/sheetsApi";
 
@@ -42,7 +43,6 @@ const METHOD_OPTIONS = [
 ];
 
 const PRODUCT_MODES: { id: ProductMode; label: string }[] = [
-  { id: "auto", label: "Авто" },
   { id: "silkorm", label: "СилКорм® Про" },
   { id: "egalis", label: "EGALIS Ferment" },
 ];
@@ -52,7 +52,7 @@ export default function CalculatorScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
 
-  const [productMode, setProductMode] = useState<ProductMode>("auto");
+  const [productMode, setProductMode] = useState<ProductMode>("silkorm");
   const [culture, setCulture] = useState("");
   const [mass, setMass] = useState("");
   const [moisture, setMoisture] = useState(40);
@@ -68,15 +68,13 @@ export default function CalculatorScreen() {
   const ruleExists = culture ? findRule(culture, moisture) !== null : null;
   const moistureRisk = getMoistureRisk(moisture);
 
-  const effectiveProduct = result?.product.id ?? (productMode === "silkorm" ? "silkorm" : productMode === "egalis" ? "egalis" : null);
-  const showEgalisFields = productMode === "egalis" || (productMode === "auto" && result?.product.id === "egalis");
-  const showLayerMode = (productMode === "silkorm" || (productMode === "auto" && result?.product.id === "silkorm")) && result?.rule?.layerMode;
-  const canLayerMode = productMode === "silkorm" || (productMode === "auto" && !!(culture && findRule(culture, moisture)?.layerMode));
+  const effectiveProduct = result?.product.id ?? (productMode === "silkorm" ? "silkorm" : "egalis");
+  const showEgalisFields = productMode === "egalis";
+  const showLayerMode = productMode === "silkorm" && result?.rule?.layerMode;
+  const canLayerMode = productMode === "silkorm";
 
   const egalisCurrentDose = culture ? getEgalisDoseForCulture(culture) : 2;
-  const showEgalisPackSelector =
-    productMode === "egalis" ||
-    (productMode === "auto" && !!culture && !!findRule(culture, moisture) && findRule(culture, moisture)?.productId === "egalis");
+  const showEgalisPackSelector = productMode === "egalis";
 
   const reset = () => { setResult(null); setSaved(false); };
 
@@ -205,16 +203,14 @@ export default function CalculatorScreen() {
         })}
       </View>
 
-      {productMode !== "auto" && (
-        <View style={styles.forcedBanner}>
-          <Feather name="lock" size={12} color={colors.primary} />
-          <Text style={styles.forcedBannerText}>
-            {productMode === "silkorm"
-              ? "Расчёт по СилКорм® Про — доза подбирается по культуре"
-              : "Расчёт по EGALIS Ferment — доза подбирается по культуре"}
-          </Text>
-        </View>
-      )}
+      <View style={styles.forcedBanner}>
+        <Feather name="lock" size={12} color={colors.primary} />
+        <Text style={styles.forcedBannerText}>
+          {productMode === "silkorm"
+            ? "Расчёт по СилКорм® Про — доза подбирается по культуре"
+            : "Расчёт по EGALIS Ferment — доза подбирается по культуре"}
+        </Text>
+      </View>
 
       {/* ── Culture Selection ── */}
       <Text style={[styles.groupLabel, { marginTop: 14 }]}>Сырьё</Text>
@@ -395,7 +391,7 @@ export default function CalculatorScreen() {
         )}
 
         {/* Layer Mode for СилКорм */}
-        {(productMode === "silkorm" || (productMode === "auto" && canLayerMode)) && (
+        {canLayerMode && (
           <>
             <View style={styles.divider} />
             <TouchableOpacity
@@ -423,11 +419,11 @@ export default function CalculatorScreen() {
       {/* ── Result ── */}
       {result && (
         <>
-          {/* EGALIS moisture warning */}
-          {result.egalisWarning && (
+          {/* Moisture warning */}
+          {result.moistureWarning && (
             <View style={styles.egalisWarningBox}>
               <Feather name="alert-triangle" size={15} color="#991B1B" />
-              <Text style={styles.egalisWarningText}>{result.egalisWarning}</Text>
+              <Text style={styles.egalisWarningText}>{result.moistureWarning}</Text>
             </View>
           )}
 

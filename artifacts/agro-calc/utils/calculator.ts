@@ -1,6 +1,6 @@
 import { PRODUCTS, RULES, EGALIS_PACKAGES, type Product, type Rule } from "../constants/mockData";
 
-export type ProductMode = "auto" | "silkorm" | "egalis";
+export type ProductMode = "silkorm" | "egalis";
 
 export interface CalculationInput {
   culture: string;
@@ -28,7 +28,7 @@ export interface CalculationResult {
   doseDisplay: string;
   reason: string;
   isForcedProduct: boolean;
-  egalisWarning?: string;
+  moistureWarning?: string;
   totalLiters?: number;
   totalKg: number;
   totalCost: number;
@@ -50,21 +50,31 @@ export interface MoistureRisk {
   borderColor: string;
   icon: "alert-triangle" | "check-circle" | "info";
   text: string;
-  level: "warn-low" | "optimal" | "warn-high" | "danger";
+  level: "no-preserve" | "warn-low" | "optimal" | "warn-high" | "danger";
 }
 
 export function getMoistureRisk(moisture: number): MoistureRisk {
-  if (moisture < 25) {
+  if (moisture < 30) {
     return {
       color: "#92400E",
       bgColor: "#FFFBEB",
       borderColor: "#FCD34D",
       icon: "alert-triangle",
-      text: "Сырьё сухое — риск нагрева и плесени",
+      text: "Ниже 30% — консервирование невозможно",
+      level: "no-preserve",
+    };
+  }
+  if (moisture < 45) {
+    return {
+      color: "#92400E",
+      bgColor: "#FFFBEB",
+      borderColor: "#FCD34D",
+      icon: "alert-triangle",
+      text: "30–44% — только СилКорм Про (EGALIS неэффективен)",
       level: "warn-low",
     };
   }
-  if (moisture <= 55) {
+  if (moisture <= 75) {
     return {
       color: "#166534",
       bgColor: "#F0FDF4",
@@ -74,13 +84,13 @@ export function getMoistureRisk(moisture: number): MoistureRisk {
       level: "optimal",
     };
   }
-  if (moisture <= 75) {
+  if (moisture <= 80) {
     return {
       color: "#1E40AF",
       bgColor: "#EFF6FF",
       borderColor: "#93C5FD",
       icon: "info",
-      text: "Высокая влажность — возможны потери сока",
+      text: "Высокая влажность — риск потерь сока",
       level: "warn-high",
     };
   }
@@ -94,6 +104,24 @@ export function getMoistureRisk(moisture: number): MoistureRisk {
   };
 }
 
+export function getMoistureWarning(moisture: number, productId: "silkorm" | "egalis"): string | undefined {
+  if (moisture < 30) {
+    return "При данной влажности консервирование невозможно. Влажность должна быть не менее 30%.";
+  }
+  if (productId === "egalis") {
+    if (moisture < 45) {
+      return "При данных показателях влажности биологический консервант неэффективен!";
+    }
+    if (moisture > 75) {
+      return "При данных показателях влажности биологический консервант неэффективен!";
+    }
+  }
+  if (productId === "silkorm" && moisture > 80) {
+    return "Критически высокая влажность — возможны значительные потери при силосовании.";
+  }
+  return undefined;
+}
+
 export function getEgalisDoseForCulture(culture: string): number {
   const rule = RULES.find((r) => r.culture === culture && r.productId === "egalis");
   return rule?.doseMin ?? EGALIS_DEFAULT_DOSE_G;
@@ -103,12 +131,13 @@ export function egalisPackTons(packMassG: number, doseGPerT: number): number {
   return packMassG / doseGPerT;
 }
 
-export function findRule(culture: string, moisture: number): Rule | null {
+export function findRule(culture: string, moisture: number, productId?: "silkorm" | "egalis"): Rule | null {
   const matches = RULES.filter(
     (r) =>
       r.culture === culture &&
       moisture >= r.moistureMin &&
-      moisture <= r.moistureMax
+      moisture <= r.moistureMax &&
+      (productId ? r.productId === productId : true)
   );
   if (matches.length === 0) return null;
   matches.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
@@ -139,18 +168,34 @@ const SILKORM_FALLBACK_DOSE = 3;
 export const EGALIS_DEFAULT_DOSE_G = 2;
 
 export function calculate(input: CalculationInput): CalculationResult | null {
+  // Find best rule for any product
   const naturalRule = findRule(input.culture, input.moisture);
+  // Find product-specific rules
+  const silkormRule = findRule(input.culture, input.moisture, "silkorm");
+  const egalisRule  = findRule(input.culture, input.moisture, "egalis");
 
   let rule: Rule;
   let isForcedProduct = false;
-  let egalisWarning: string | undefined;
 
-  if (input.productMode === "auto") {
-    if (!naturalRule) return null;
-    rule = naturalRule;
-  } else if (input.productMode === "silkorm") {
-    isForcedProduct = naturalRule?.productId !== "silkorm";
-    if (!naturalRule) {
+  if (input.productMode === "silkorm") {
+    if (silkormRule) {
+      rule = silkormRule;
+      isForcedProduct = false;
+    } else if (naturalRule) {
+      // culture has egalis rule, force silkorm with fallback dose
+      rule = {
+        ...naturalRule,
+        id: "forced-silkorm",
+        productCode: "SILKORM_PRO",
+        productId: "silkorm",
+        doseMin: SILKORM_FALLBACK_DOSE,
+        doseMax: SILKORM_FALLBACK_DOSE,
+        unit: "л/т",
+        layerMode: true,
+      };
+      isForcedProduct = true;
+    } else {
+      // no rule at all
       rule = {
         id: "forced-silkorm",
         productCode: "SILKORM_PRO",
@@ -164,23 +209,28 @@ export function calculate(input: CalculationInput): CalculationResult | null {
         unit: "л/т",
         layerMode: true,
       };
-    } else if (naturalRule.productId === "egalis") {
-      rule = {
-        ...naturalRule,
-        id: "forced-silkorm",
-        productCode: "SILKORM_PRO",
-        productId: "silkorm",
-        doseMin: SILKORM_FALLBACK_DOSE,
-        doseMax: SILKORM_FALLBACK_DOSE,
-        unit: "л/т",
-        layerMode: true,
-      };
-    } else {
-      rule = naturalRule;
+      isForcedProduct = true;
     }
   } else {
-    isForcedProduct = naturalRule?.productId !== "egalis";
-    if (!naturalRule) {
+    // egalis mode
+    if (egalisRule) {
+      // Use dedicated egalis rule (correct dose per culture)
+      rule = egalisRule;
+      isForcedProduct = false;
+    } else if (naturalRule) {
+      // culture has silkorm rule only, force egalis with default dose
+      rule = {
+        ...naturalRule,
+        id: "forced-egalis",
+        productCode: "EGALIS_FERMENT",
+        productId: "egalis",
+        doseMin: EGALIS_DEFAULT_DOSE_G,
+        doseMax: EGALIS_DEFAULT_DOSE_G,
+        unit: "г/т",
+        layerMode: false,
+      };
+      isForcedProduct = true;
+    } else {
       rule = {
         id: "forced-egalis",
         productCode: "EGALIS_FERMENT",
@@ -194,27 +244,14 @@ export function calculate(input: CalculationInput): CalculationResult | null {
         unit: "г/т",
         layerMode: false,
       };
-    } else if (naturalRule.productId === "silkorm") {
-      rule = {
-        ...naturalRule,
-        id: "forced-egalis",
-        productCode: "EGALIS_FERMENT",
-        productId: "egalis",
-        doseMin: EGALIS_DEFAULT_DOSE_G,
-        doseMax: EGALIS_DEFAULT_DOSE_G,
-        unit: "г/т",
-        layerMode: false,
-      };
-    } else {
-      rule = naturalRule;
-    }
-    if (input.moisture > 70) {
-      egalisWarning = "EGALIS Ferment не рекомендован при влажности выше 70% — повышен риск потерь эффективности";
+      isForcedProduct = true;
     }
   }
 
   const product = PRODUCTS.find((p) => p.id === rule.productId);
   if (!product) return null;
+
+  const moistureWarning = getMoistureWarning(input.moisture, rule.productId as "silkorm" | "egalis");
 
   const dose = (rule.doseMin + rule.doseMax) / 2;
   const doseDisplay =
@@ -251,11 +288,6 @@ export function calculate(input: CalculationInput): CalculationResult | null {
     }
 
     if (input.layerMode && rule.layerMode) {
-      const toUnit = (v: number): string => {
-        const lph = v * input.speed;
-        if (lph < 1) return `${round(lph * 1000, 1)} мл/ч`;
-        return `${round(lph, 1)} л/ч`;
-      };
       layerDoses = {
         bottom: round(dose * 0.75, 2),
         middle: dose,
@@ -284,8 +316,7 @@ export function calculate(input: CalculationInput): CalculationResult | null {
     }
   }
 
-  const id =
-    Date.now().toString() + Math.random().toString(36).substring(2, 9);
+  const id = Date.now().toString() + Math.random().toString(36).substring(2, 9);
 
   return {
     product,
@@ -294,7 +325,7 @@ export function calculate(input: CalculationInput): CalculationResult | null {
     doseDisplay,
     reason,
     isForcedProduct,
-    egalisWarning,
+    moistureWarning,
     totalLiters,
     totalKg,
     totalCost,
@@ -365,7 +396,7 @@ export function buildShareText(result: CalculationResult): string {
       : "",
     `Настройка дозатора: ${result.pumpLPH} ${result.pumpUnit}`,
     `Цена партии: ${formatCurrency(result.totalCost)} BYN`,
-    result.egalisWarning ? `\n⚠️ ${result.egalisWarning}` : "",
+    result.moistureWarning ? `\n⚠️ ${result.moistureWarning}` : "",
   ];
   return lines.filter(Boolean).join("\n");
 }
