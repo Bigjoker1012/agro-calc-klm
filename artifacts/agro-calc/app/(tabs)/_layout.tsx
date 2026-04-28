@@ -8,6 +8,7 @@ import React from "react";
 import { Platform, StyleSheet, View, useColorScheme } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
+import { KlmLogo } from "@/components/KlmLogo";
 
 function NativeTabLayout() {
   return (
@@ -79,6 +80,11 @@ function ClassicTabLayout() {
         name="index"
         options={{
           title: "AgroCalc КЛМ",
+          headerRight: () => (
+            <View style={{ marginRight: 14, justifyContent: "center" }}>
+              <KlmLogo height={34} />
+            </View>
+          ),
           tabBarIcon: ({ color }) =>
             isIOS ? (
               <SymbolView name="function" tintColor={color} size={22} />
