@@ -47,3 +47,11 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Service account credentials — NEVER commit these
+credentials/
+*service-account*.json
+*service_account*.json
+attached_assets/*service*account*.json
+attached_assets/*service*account*.txt
+attached_assets/Pasted--type-service-account*.txt
