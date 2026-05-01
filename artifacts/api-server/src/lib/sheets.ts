@@ -17,7 +17,17 @@ function getAuth() {
     }
   }
 
-  // 2. Fallback: read key file from project root (Replit dev environment)
+  // 2a. Fallback: credentials bundled alongside the server (production deployment)
+  if (!credentials) {
+    try {
+      const filePath = resolve(__dirname, "../credentials/service-account.json");
+      credentials = JSON.parse(readFileSync(filePath, "utf-8"));
+    } catch {
+      // not found
+    }
+  }
+
+  // 2b. Fallback: read key file from project root (Replit dev workspace)
   if (!credentials) {
     try {
       const filePath = resolve(
