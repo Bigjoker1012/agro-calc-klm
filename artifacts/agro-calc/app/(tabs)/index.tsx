@@ -11,7 +11,10 @@ import {
   Linking,
   PanResponder,
   Platform,
+  Modal,
+  Pressable,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -63,6 +66,7 @@ export default function CalculatorScreen() {
   const [layerMode, setLayerMode] = useState(false);
   const [result, setResult] = useState<CalculationResult | null>(null);
   const [saved, setSaved] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
 
   const moistureHint = culture ? CULTURE_MOISTURE_HINTS[culture] : null;
   const ruleExists = culture ? findRule(culture, moisture) !== null : null;
@@ -144,22 +148,45 @@ export default function CalculatorScreen() {
     }
   };
 
-  const handleShareWhatsApp = async () => {
-    if (!result) return;
-    const text = buildShareText(result);
-    const url = `whatsapp://send?text=${encodeURIComponent(text)}`;
-    try {
-      const canOpen = await Linking.canOpenURL(url);
-      if (canOpen) { Linking.openURL(url); } else { Share.share({ message: text }); }
-    } catch {
-      Share.share({ message: text });
-    }
-  };
+  const getShareText = () => result ? buildShareText(result) : "";
 
-  const handleSharePDF = async () => {
+  const openShareMenu = () => { Haptics.selectionAsync(); setShowShareMenu(true); };
+
+  const shareVia = async (type: "whatsapp" | "viber" | "telegram" | "email" | "copy") => {
+    setShowShareMenu(false);
     if (!result) return;
-    const text = buildShareText(result);
-    Share.share({ message: text, title: "AgroCalc КЛМ — Расчёт" });
+    const text = getShareText();
+    const encoded = encodeURIComponent(text);
+
+    if (type === "copy") {
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        await Clipboard.setStringAsync(text);
+      }
+      Alert.alert("Скопировано", "Текст расчёта скопирован в буфер обмена");
+      return;
+    }
+
+    if (type === "email") {
+      const subject = encodeURIComponent("AgroCalc КЛМ — Расчёт консерванта");
+      Linking.openURL(`mailto:?subject=${subject}&body=${encoded}`);
+      return;
+    }
+
+    const urls: Record<string, string> = {
+      whatsapp: `whatsapp://send?text=${encoded}`,
+      viber:    `viber://forward?text=${encoded}`,
+      telegram: `https://t.me/share/url?url=&text=${encoded}`,
+    };
+
+    try {
+      const can = await Linking.canOpenURL(urls[type]);
+      if (can) { Linking.openURL(urls[type]); }
+      else { Share.share({ message: text, title: "AgroCalc КЛМ — Расчёт" }); }
+    } catch {
+      Share.share({ message: text, title: "AgroCalc КЛМ — Расчёт" });
+    }
   };
 
   const lockScrollX = useCallback(() => {
@@ -509,21 +536,90 @@ export default function CalculatorScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.shareRow}>
-            <TouchableOpacity style={styles.shareBtn} onPress={handleSharePDF} activeOpacity={0.8}>
-              <Feather name="file-text" size={18} color={colors.foreground} />
-              <Text style={styles.shareBtnText}>Поделиться</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.shareBtn, { borderColor: "#25D366" }]} onPress={handleShareWhatsApp} activeOpacity={0.8}>
-              <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
-              <Text style={[styles.shareBtnText, { color: "#25D366" }]}>WhatsApp</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.shareMainBtn} onPress={openShareMenu} activeOpacity={0.85}>
+            <Feather name="share-2" size={18} color="#fff" />
+            <Text style={styles.shareMainBtnText}>Поделиться</Text>
+          </TouchableOpacity>
+
+          {/* ── Share Menu Modal ── */}
+          <Modal
+            visible={showShareMenu}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setShowShareMenu(false)}
+          >
+            <Pressable style={styles.modalOverlay} onPress={() => setShowShareMenu(false)}>
+              <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+                <Text style={styles.modalTitle}>Поделиться расчётом</Text>
+                <View style={styles.modalDivider} />
+
+                {/* Mobile-only messengers */}
+                {!isWeb && (
+                  <>
+                    <ShareOption
+                      icon={<Ionicons name="logo-whatsapp" size={22} color="#25D366" />}
+                      label="WhatsApp"
+                      color="#25D366"
+                      onPress={() => shareVia("whatsapp")}
+                    />
+                    <ShareOption
+                      icon={<Ionicons name="logo-viber" size={22} color="#7360F2" />}
+                      label="Viber"
+                      color="#7360F2"
+                      onPress={() => shareVia("viber")}
+                    />
+                    <ShareOption
+                      icon={<Ionicons name="paper-plane-outline" size={22} color="#229ED9" />}
+                      label="Telegram"
+                      color="#229ED9"
+                      onPress={() => shareVia("telegram")}
+                    />
+                    <View style={styles.modalDivider} />
+                  </>
+                )}
+
+                {/* All platforms */}
+                <ShareOption
+                  icon={<Feather name="mail" size={22} color={colors.foreground} />}
+                  label="Отправить на Email"
+                  color={colors.foreground}
+                  onPress={() => shareVia("email")}
+                />
+                <ShareOption
+                  icon={<Feather name="copy" size={22} color={colors.foreground} />}
+                  label="Скопировать текст"
+                  color={colors.foreground}
+                  onPress={() => shareVia("copy")}
+                />
+
+                <View style={styles.modalDivider} />
+                <TouchableOpacity style={styles.modalCancel} onPress={() => setShowShareMenu(false)}>
+                  <Text style={styles.modalCancelText}>Отмена</Text>
+                </TouchableOpacity>
+              </Pressable>
+            </Pressable>
+          </Modal>
         </>
       )}
 
       <View style={{ height: 24 }} />
     </ScrollView>
+  );
+}
+
+/* ─── Share Option Row ─── */
+function ShareOption({ icon, label, color, onPress }: {
+  icon: React.ReactNode; label: string; color: string; onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 14, paddingHorizontal: 4 }}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={{ width: 28, alignItems: "center" }}>{icon}</View>
+      <Text style={{ fontSize: 16, fontFamily: "Inter_500Medium", color }}>{label}</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -808,12 +904,28 @@ function makeStyles(
       borderTopWidth: 1, borderTopColor: colors.border,
     },
     saveRowText: { fontSize: 13, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
-    shareRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
-    shareBtn: {
-      flex: 1, height: 48, borderRadius: 12, borderWidth: 1.5,
-      borderColor: colors.border, backgroundColor: colors.card,
-      flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    shareMainBtn: {
+      height: 50, borderRadius: 14, backgroundColor: colors.primary,
+      flexDirection: "row", alignItems: "center", justifyContent: "center",
+      gap: 8, marginBottom: 12,
     },
-    shareBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    shareMainBtnText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#fff" },
+    modalOverlay: {
+      flex: 1, backgroundColor: "rgba(0,0,0,0.45)",
+      justifyContent: "flex-end",
+    },
+    modalSheet: {
+      backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+      paddingHorizontal: 20, paddingTop: 16, paddingBottom: isWeb ? 24 : 32,
+    },
+    modalTitle: {
+      fontSize: 16, fontFamily: "Inter_700Bold", color: colors.foreground,
+      textAlign: "center", marginBottom: 12,
+    },
+    modalDivider: { height: 1, backgroundColor: colors.border, marginVertical: 4 },
+    modalCancel: {
+      paddingVertical: 14, alignItems: "center",
+    },
+    modalCancelText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
   });
 }
