@@ -1,49 +1,22 @@
 import { google } from "googleapis";
-import { readFileSync } from "fs";
-import { resolve } from "path";
 
 const SHEET_ID = "1PfQfQXCxs31qS3B1sGRwS0VwkE3PGLEbVOvXVbdGFiI";
 
 function getAuth() {
-  let credentials: object | undefined;
-
-  // 1. Try environment variable
   const envJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (envJson) {
-    try {
-      credentials = JSON.parse(envJson);
-    } catch {
-      // invalid JSON in env var — fall through to file
-    }
-  }
-
-  // 2a. Fallback: credentials bundled alongside the server (production deployment)
-  if (!credentials) {
-    try {
-      const filePath = resolve(__dirname, "../credentials/service-account.json");
-      credentials = JSON.parse(readFileSync(filePath, "utf-8"));
-    } catch {
-      // not found
-    }
-  }
-
-  // 2b. Fallback: read key file from project root (Replit dev workspace)
-  if (!credentials) {
-    try {
-      const filePath = resolve(
-        process.cwd(),
-        "../../attached_assets/agro-calc-klm-851be2dde7cc_1777293560241.json"
-      );
-      credentials = JSON.parse(readFileSync(filePath, "utf-8"));
-    } catch {
-      // file not found or invalid
-    }
-  }
-
-  if (!credentials) {
+  if (!envJson) {
     throw new Error(
       "Google service account credentials не найдены. " +
       "Установите секрет GOOGLE_SERVICE_ACCOUNT_JSON."
+    );
+  }
+
+  let credentials: object;
+  try {
+    credentials = JSON.parse(envJson);
+  } catch {
+    throw new Error(
+      "Секрет GOOGLE_SERVICE_ACCOUNT_JSON содержит некорректный JSON."
     );
   }
 
