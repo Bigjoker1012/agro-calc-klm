@@ -47,3 +47,8 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Google service account credentials — store in GOOGLE_SERVICE_ACCOUNT_JSON secret instead
+*service-account*.json
+*service_account*.json
+attached_assets/agro-calc-klm-*.json
