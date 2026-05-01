@@ -17,3 +17,21 @@ id = "fVbnJb5MQdCE1mWIRx1H7"
 uri = "file://attached_assets/AgroCalc_KLM_Инструкция.docx"
 type = "word_document"
 title = "AgroCalc КЛМ — Инструкция пользователя.docx"
+
+[[outputs]]
+id = "BaLOZAD9Vr53vOQXcVRlO"
+uri = "file://attached_assets/android_1_Калькулятор.jpg"
+type = "image"
+title = "Экран 1 — Калькулятор"
+
+[[outputs]]
+id = "6k1roRppZANSEUP4JSPry"
+uri = "file://attached_assets/android_2_История.jpg"
+type = "image"
+title = "Экран 2 — История"
+
+[[outputs]]
+id = "Dp7-L6pB7_Hm4Bl9bRXmH"
+uri = "file://attached_assets/android_3_Настройки.jpg"
+type = "image"
+title = "Экран 3 — Настройки и справочник"
