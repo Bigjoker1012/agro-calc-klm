@@ -395,7 +395,7 @@ export function buildShareText(result: CalculationResult): string {
       ? `Слои: низ ${result.layerDoses.bottom} ${result.layerDoses.unit} | середина ${result.layerDoses.middle} ${result.layerDoses.unit} | верх ${result.layerDoses.top} ${result.layerDoses.unit}`
       : "",
     `Настройка дозатора: ${result.pumpLPH} ${result.pumpUnit}`,
-    `Цена партии: ${formatCurrency(result.totalCost)} BYN`,
+    `Цена партии: ${formatCurrency(result.totalCost)} BYN (без НДС)`,
     result.moistureWarning ? `\n⚠️ ${result.moistureWarning}` : "",
   ];
   return lines.filter(Boolean).join("\n");

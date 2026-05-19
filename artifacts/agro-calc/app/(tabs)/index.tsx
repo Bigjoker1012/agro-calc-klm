@@ -513,6 +513,9 @@ export default function CalculatorScreen() {
               colors={colors}
               highlight
             />
+            <Text style={{ fontSize: 11, color: "#999", fontFamily: "Inter_400Regular", textAlign: "right", marginTop: -3, marginBottom: 2 }}>
+              без НДС
+            </Text>
 
             {result.product.id === "silkorm" && (
               <View style={styles.warningBox}>
