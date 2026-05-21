@@ -112,9 +112,11 @@ export function parsePricesFromSheet(data: Record<string, Record<string, string>
   const prices: Record<string, number> = {};
   const rows = data.prices ?? [];
   for (const row of rows) {
-    const code = row["productCode"] ?? row["код"] ?? row["Код"] ?? row["code"] ?? "";
-    const rawPrice = row["price"] ?? row["цена"] ?? row["Цена"] ?? row["pricePerKg"] ?? "";
-    const price = parseFloat(rawPrice.replace(",", "."));
+    const code =
+      row["Код продукта"] ?? row["productCode"] ?? row["код"] ?? row["Код"] ?? row["code"] ?? "";
+    const rawPrice =
+      row["Цена за кг, BYN"] ?? row["price"] ?? row["цена"] ?? row["Цена"] ?? row["pricePerKg"] ?? "";
+    const price = parseFloat(String(rawPrice).replace(",", "."));
     if (code && !isNaN(price) && price > 0) {
       prices[code] = price;
     }
