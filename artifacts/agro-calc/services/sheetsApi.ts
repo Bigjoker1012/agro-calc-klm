@@ -97,6 +97,31 @@ export async function fetchServerHistory(limit = 100): Promise<ServerHistoryReco
   }
 }
 
+export async function getCachedSheetData(): Promise<Record<string, Record<string, string>[]> | null> {
+  try {
+    const raw = await AsyncStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { data: Record<string, Record<string, string>[]>; cachedAt: string };
+    return parsed.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function parsePricesFromSheet(data: Record<string, Record<string, string>[]>): Record<string, number> {
+  const prices: Record<string, number> = {};
+  const rows = data.prices ?? [];
+  for (const row of rows) {
+    const code = row["productCode"] ?? row["код"] ?? row["Код"] ?? row["code"] ?? "";
+    const rawPrice = row["price"] ?? row["цена"] ?? row["Цена"] ?? row["pricePerKg"] ?? "";
+    const price = parseFloat(rawPrice.replace(",", "."));
+    if (code && !isNaN(price) && price > 0) {
+      prices[code] = price;
+    }
+  }
+  return prices;
+}
+
 export async function flushHistoryToSheets(): Promise<{ sent: number; failed: number }> {
   let sent = 0;
   let failed = 0;

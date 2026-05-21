@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -34,7 +34,13 @@ import {
 } from "@/utils/calculator";
 
 import { saveCalculation } from "@/utils/storage";
-import { queueHistoryRecord, flushHistoryToSheets } from "@/services/sheetsApi";
+import {
+  queueHistoryRecord,
+  flushHistoryToSheets,
+  getCachedSheetData,
+  parsePricesFromSheet,
+  syncSheetData,
+} from "@/services/sheetsApi";
 
 const MOISTURE_MIN = 0;
 const MOISTURE_MAX = 100;
@@ -67,6 +73,26 @@ export default function CalculatorScreen() {
   const [result, setResult] = useState<CalculationResult | null>(null);
   const [saved, setSaved] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
+  const [priceOverrides, setPriceOverrides] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    getCachedSheetData().then((data) => {
+      if (data) {
+        const prices = parsePricesFromSheet(data);
+        if (Object.keys(prices).length > 0) setPriceOverrides(prices);
+      }
+    });
+    syncSheetData().then((ok) => {
+      if (ok) {
+        getCachedSheetData().then((data) => {
+          if (data) {
+            const prices = parsePricesFromSheet(data);
+            if (Object.keys(prices).length > 0) setPriceOverrides(prices);
+          }
+        });
+      }
+    });
+  }, []);
 
   const moistureHint = culture ? CULTURE_MOISTURE_HINTS[culture] : null;
   const ruleExists = culture ? findRule(culture, moisture) !== null : null;
@@ -120,6 +146,7 @@ export default function CalculatorScreen() {
       egalisWaterPerPack,
       layerMode,
       productMode,
+      priceOverrides,
     });
 
     if (!calc) {

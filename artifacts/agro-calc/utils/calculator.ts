@@ -12,6 +12,7 @@ export interface CalculationInput {
   egalisWaterPerPack: 50 | 200;
   layerMode: boolean;
   productMode: ProductMode;
+  priceOverrides?: Record<string, number>;
 }
 
 export interface LayerDoses {
@@ -250,6 +251,9 @@ export function calculate(input: CalculationInput): CalculationResult | null {
 
   const product = PRODUCTS.find((p) => p.id === rule.productId);
   if (!product) return null;
+  const effectivePrice = (input.priceOverrides && input.priceOverrides[product.code] != null)
+    ? input.priceOverrides[product.code]!
+    : product.price;
 
   const moistureWarning = getMoistureWarning(input.moisture, rule.productId as "silkorm" | "egalis");
 
@@ -277,7 +281,7 @@ export function calculate(input: CalculationInput): CalculationResult | null {
   if (product.id === "silkorm") {
     totalLiters = round(dose * input.mass, 1);
     totalKg = round(totalLiters * (product.density ?? 1.2), 2);
-    totalCost = round(totalKg * product.price, 2);
+    totalCost = round(totalKg * effectivePrice, 2);
     const rawLPH = dose * input.speed;
     if (rawLPH < 1) {
       pumpLPH = round(rawLPH * 1000, 1);
@@ -300,7 +304,7 @@ export function calculate(input: CalculationInput): CalculationResult | null {
       ?? EGALIS_PACKAGES[0];
     const doseGPerT = rule.doseMin;
     totalKg = round((doseGPerT / 1000) * input.mass, 4);
-    totalCost = round(totalKg * product.price, 2);
+    totalCost = round(totalKg * effectivePrice, 2);
     const tonsPerPack = pack.massG / doseGPerT;
     totalPacks = Math.ceil(input.mass / tonsPerPack);
     packLabel = `${pack.massG} г`;
