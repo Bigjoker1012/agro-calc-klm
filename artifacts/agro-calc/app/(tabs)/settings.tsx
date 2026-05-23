@@ -18,6 +18,8 @@ import {
   syncSheetData,
   flushHistoryToSheets,
   getSyncStatus,
+  getCachedSheetData,
+  parsePricesFromSheet,
   type SyncStatus,
 } from "@/services/sheetsApi";
 
@@ -35,12 +37,17 @@ export default function SettingsScreen() {
     unsyncedCount: 0,
     lastError: null,
   });
+  const [syncedPrices, setSyncedPrices] = useState<Record<string, number>>({});
 
   const styles = makeStyles(colors, isWeb, insets);
 
   const loadStatus = useCallback(async () => {
     const s = await getSyncStatus();
     setSyncStatus(s);
+    const data = await getCachedSheetData();
+    if (data) {
+      setSyncedPrices(parsePricesFromSheet(data));
+    }
   }, []);
 
   useFocusEffect(useCallback(() => {
@@ -171,7 +178,10 @@ export default function SettingsScreen() {
                 <Text style={styles.productName}>{p.name}</Text>
                 <Text style={styles.productDetail}>
                   {p.form === "liquid" ? "Жидкость" : "Порошок"} •{" "}
-                  {p.price.toLocaleString("ru-RU")} BYN/кг
+                  {(syncedPrices[p.code] ?? p.price).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} BYN/кг
+                  {syncedPrices[p.code] && syncedPrices[p.code] !== p.price && (
+                    <Text style={{ color: colors.primary }}> ✓</Text>
+                  )}
                   {p.density && ` • Плотность ${p.density} кг/л`}
                   {p.packSizeG && ` • Пакет ${p.packSizeG} г`}
                 </Text>
