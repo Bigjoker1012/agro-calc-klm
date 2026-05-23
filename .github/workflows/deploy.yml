@@ -42,30 +42,25 @@ jobs:
             --exclude='node_modules' \
             --exclude='.expo' \
             artifacts/agro-calc/dist/ \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/agro-calc/dist/
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/artifacts/agro-calc/dist/
           rsync -az \
             artifacts/agro-calc/server/ \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/agro-calc/server/
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/artifacts/agro-calc/server/
           rsync -az \
             artifacts/agro-calc/app.json \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/agro-calc/app.json
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/artifacts/agro-calc/app.json
 
       - name: Deploy API server
         run: |
           rsync -az \
             artifacts/api-server/dist/ \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/api-server/dist/
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/artifacts/api-server/dist/
 
       - name: Restart services on VPS
         run: |
-          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'ENDSSH'
-            export GOOGLE_SERVICE_ACCOUNT_JSON='${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}'
-            cd ${{ secrets.DEPLOY_PATH }}
-            pm2 restart agro-calc 2>/dev/null || \
-              PORT=3000 pm2 start agro-calc/server/serve.js --name agro-calc
-            PORT=8080 GOOGLE_SERVICE_ACCOUNT_JSON="$GOOGLE_SERVICE_ACCOUNT_JSON" \
-              pm2 restart api-server 2>/dev/null || \
-              PORT=8080 GOOGLE_SERVICE_ACCOUNT_JSON="$GOOGLE_SERVICE_ACCOUNT_JSON" \
-              pm2 start api-server/dist/index.mjs --name api-server
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} 'bash -s' << 'ENDSSH'
+            cd /var/www/agro-calc-klm
+            pm2 restart klm
+            pm2 restart agro-calc-api
             pm2 save
           ENDSSH
