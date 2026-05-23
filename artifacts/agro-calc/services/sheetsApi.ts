@@ -44,7 +44,10 @@ async function saveSyncStatus(status: Omit<SyncStatus, "unsyncedCount">) {
 
 export async function syncSheetData(): Promise<boolean> {
   try {
-    const res = await fetch(`${getApiBase()}/sheets/data`, { method: "GET" });
+    const res = await fetch(`${getApiBase()}/sheets/data`, {
+      method: "GET",
+      cache: "no-store",
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     if (json.ok) {
