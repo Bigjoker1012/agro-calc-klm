@@ -42,16 +42,8 @@ jobs:
       - name: Deploy Expo web app
         run: |
           rsync -az --delete \
-            --exclude='node_modules' \
-            --exclude='.expo' \
             artifacts/agro-calc/dist/ \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/artifacts/agro-calc/dist/
-          rsync -az \
-            artifacts/agro-calc/server/ \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/artifacts/agro-calc/server/
-          rsync -az \
-            artifacts/agro-calc/app.json \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/artifacts/agro-calc/app.json
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/web/
 
       - name: Deploy API server
         run: |
@@ -59,11 +51,9 @@ jobs:
             artifacts/api-server/dist/ \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/artifacts/api-server/dist/
 
-      - name: Restart services on VPS
+      - name: Restart API server on VPS
         run: |
           ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} 'bash -s' << 'ENDSSH'
-            cd /var/www/agro-calc-klm
-            pm2 restart klm
             pm2 restart agro-calc-api
             pm2 save
           ENDSSH
